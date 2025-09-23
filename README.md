@@ -281,7 +281,3 @@ Please open an issue including:
 - Request URL(s) & method(s)
 - Relevant response headers / JSON payload (if not sensitive)
 - (Optional) Screenshots / HAR for complex rendering issues
-
----
-
-Happy hacking! 🚀

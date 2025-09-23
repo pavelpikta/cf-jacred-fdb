@@ -225,8 +225,4 @@ statsAsset → staticAsset → methodAndCors → torrserver → confEndpoint →
 
 ---
 
-Удачной разработки! 🚀
-
----
-
 🔁 Переключить язык: [English version](./README.md)
