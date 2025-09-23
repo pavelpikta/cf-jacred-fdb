@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Статистика трекеров</title>
+    <link rel="icon" href="./img/favicon.ico" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Rubik:300,400&display=auto"
+    />
+    <link rel="stylesheet" type="text/css" href="./css/styles.css" />
+    <link rel="stylesheet" type="text/css" href="./css/stats.css" />
+  </head>
+
+  <body>
+    <div id="page">
+      <div class="logo"></div>
+      <div class="stats-toolbar">
+        <div class="filter-inline">
+          <input
+            type="text"
+            id="searchTracker"
+            class="search-box"
+            placeholder="Фильтр по имени..."
+          />
+          <select id="sortSelect" class="sort-select" title="Сортировка">
+            <option value="name">По имени</option>
+            <option value="newtor">Новые торренты (desc)</option>
+            <option value="update">Изменения (desc)</option>
+            <option value="alltorrents">Всего торрентов (desc)</option>
+            <option value="confirm">Подтверждено (desc)</option>
+            <option value="wait">Ожидает (desc)</option>
+            <option value="skip">Пропущено (desc)</option>
+          </select>
+          <span class="cards-counter" id="cardsCounter"></span>
+        </div>
+        <div class="filter-inline">
+          <a href="/" class="btn-secondary" id="goHome" title="На главную">Главная</a>
+          <button class="stats-refresh" id="refreshBtn">Обновить</button>
+          <button class="btn-secondary" id="toggleNumbers" title="Переключить формат чисел">
+            Полные числа
+          </button>
+          <button class="btn-secondary" id="toggleWidth" title="Переключить ширину">
+            Широкий режим
+          </button>
+          <button class="btn-secondary" id="toggleCompact" title="Плотный режим">Компактный</button>
+          <button class="btn-secondary" id="toggleTheme" title="Переключить тему">Тема</button>
+          <span class="stats-last-update" id="lastUpdate">—</span>
+        </div>
+      </div>
+      <div id="loading" class="msg" style="display: none">Загрузка статистики...</div>
+      <div id="error" class="msg" style="display: none">Ошибка загрузки данных.</div>
+      <div id="aggregateHost"></div>
+      <div id="statsGrid" class="stats-grid" aria-live="polite"></div>
+      <div id="emptyState" class="empty-msg" style="display: none">Ничего не найдено.</div>
+    </div>
+    <a href="/" id="back-to-top" title="На главную"></a>
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"
+    ></script>
+    <script src="./js/modal.apikey.js"></script>
+    <script src="./js/stats.js"></script>
+  </body>
+</html>

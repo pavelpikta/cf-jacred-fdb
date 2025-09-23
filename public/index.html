@@ -1,0 +1,150 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" href="./img/favicon.ico" />
+    <title>Поиск торрентов</title>
+    <link
+      rel="preload"
+      href="https://fonts.googleapis.com/css?family=Rubik:300,400&display=auto"
+      as="style"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Rubik:300,400&display=auto"
+    />
+    <link
+      rel="search"
+      type="application/opensearchdescription+xml"
+      title="Torlook"
+      href="/opensearch.xml"
+    />
+    <link rel="stylesheet" type="text/css" href="./css/icheck-material.css" />
+    <link rel="stylesheet" type="text/css" href="./css/microtip.min.css" />
+    <link rel="stylesheet" type="text/css" href="./css/styles.css" />
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"
+    ></script>
+  </head>
+
+  <body>
+    <div id="page">
+      <div style="text-align: right; margin-bottom: 10px">
+        <a href="/stats" class="top-link-btn" aria-label="Статистика трекеров"
+          >Статистика трекеров</a
+        >
+        &nbsp;|&nbsp;
+        <a
+          href="#"
+          id="torrServerSettingsBtn"
+          class="top-link-btn"
+          aria-label="Настройки TorrServer"
+          title="Настройки TorrServer"
+          >Настройки TorrServer</a
+        >
+      </div>
+      <div class="logo">
+        <img src="./img/logo.svg" class="logo-icon" />
+      </div>
+      <div id="searchForm">
+        <form id="search" action="/">
+          <fieldset>
+            <div class="search-line-field">
+              <input
+                name="s"
+                id="s"
+                type="text"
+                placeholder="Веном 2 or tt7097896 or kp1227967"
+                value=""
+              />
+              <input type="submit" value="найти" id="submitButton" />
+            </div>
+          </fieldset>
+        </form>
+        <div id="apiKeyInfo" style="display: none" class="apikey-hint">
+          Для выполнения поиска требуется API ключ. Появится окно для ввода.
+        </div>
+        <div id="liveAnnounce" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+        <div id="filter">
+          <div class="filter-container">
+            <div class="w2">
+              <div class="filter-label">Уточнить</div>
+              <input name="refine" placeholder="Например BDRip, WEB-DL, США" />
+            </div>
+            <div class="w2">
+              <div class="filter-label">Исключить</div>
+              <input name="exclude" placeholder="Например HEVC" />
+            </div>
+            <div class="w4">
+              <div class="filter-label">Качество</div>
+              <select name="quality"></select>
+            </div>
+            <div class="w4">
+              <div class="filter-label">Тип видео</div>
+              <select name="type">
+                <option value="">Любое</option>
+                <option value="sdr">SDR</option>
+                <option value="hdr">HDR</option>
+              </select>
+            </div>
+            <div class="w4">
+              <div class="filter-label">Озвучка</div>
+              <select name="voice"></select>
+            </div>
+            <div class="w4">
+              <div class="filter-label">Сезон</div>
+              <select name="season"></select>
+            </div>
+            <div class="w4">
+              <div class="filter-label">Категория</div>
+              <select name="category"></select>
+            </div>
+            <div class="w4">
+              <div class="filter-label">Трекер</div>
+              <select name="tracker"></select>
+            </div>
+            <div class="w4">
+              <div class="filter-label">Год</div>
+              <select name="year"></select>
+            </div>
+            <div class="w4">
+              <button class="filter-button">Сбросить фильтр</button>
+            </div>
+          </div>
+        </div>
+        <div id="searchInContainer">
+          <div class="icheck-material-cyan">
+            <input type="radio" name="sort" value="sid" id="sortSeeders" checked />
+            <label for="sortSeeders"> по сидам</label>
+          </div>
+          <div class="icheck-material-cyan">
+            <input type="radio" name="sort" value="size" id="sortSize" />
+            <label for="sortSize"> по размеру</label>
+          </div>
+          <div class="icheck-material-cyan">
+            <input type="radio" name="sort" value="date" id="sortDate" />
+            <label for="sortDate"> по дате</label>
+          </div>
+          <div class="icheck-material-cyan" style="margin-left: auto">
+            <input type="checkbox" name="exact" id="exactSearch" />
+            <label for="exactSearch" id="exactLabel">Точный поиск</label>
+          </div>
+        </div>
+      </div>
+      <div id="resultsSummary" class="results-summary" style="display: none"></div>
+      <div id="resultsDiv" class="" aria-live="polite" aria-busy="false"></div>
+      <div id="empty" class="msg">Введите название фильма или сериала для поиска.</div>
+      <div id="noresults" class="msg">По вашему запросу мы не чего не нашли.</div>
+      <div id="loading" class="msg">Поиск... ожидайте результатов.</div>
+      <script src="./js/modal.apikey.js" defer></script>
+      <script src="./js/torrserver.js" defer></script>
+      <script src="./js/index.js" defer></script>
+    </div>
+    <a href="#" id="back-to-top" title="To infinity and beyond"
+      ><i class="fas fa-space-shuttle fa-rotate-270"></i
+    ></a>
+  </body>
+</html>

@@ -1,0 +1,522 @@
+/* --------------------------------------------------------------------------
+ * stats.css
+ * --------------------------------------------------------------------------
+ * Purpose
+ *   Styles specific to tracker statistics dashboard (stats.html). Provides a
+ *   CSS variable driven design supporting dark & light themes, responsive card
+ *   grid layout, and visualization accents (track distribution bars, stale
+ *   indicators, compact vs wide modes).
+ *
+ * Key Sections
+ *   1. Root Theme Variables (dark + [data-theme='light'] overrides)
+ *   2. Base Layout & Typography (page, toolbar)
+ *   3. Card Components (.tracker-card, aggregate-card)
+ *   4. State Indicators (stale, very-stale, flash)
+ *   5. Tracks Distribution Bar & Legend
+ *   6. Layout Modes (.stats-wide, .stats-compact)
+ *   7. Responsive Breakpoints
+ *
+ * Theming Strategy
+ *   - Shared structural tokens (--radius, --transition-fast) remain stable.
+ *   - Color variables are redefined under [data-theme='light'].
+ *   - Prefer referencing semantic variables (e.g., --c-border) inside rules.
+ *
+ * Performance
+ *   - Limit heavy selectors. Grid uses auto-fit to adapt to available width.
+ *   - Avoid large shadow/blur operations to keep scrolling smooth.
+ * -------------------------------------------------------------------------- */
+:root {
+  --c-bg: #1e1e1e;
+  --c-bg-alt: #2c2c2c;
+  --c-bg-alt2: #323232;
+  --c-text: #f2f2f2;
+  --c-text-dim: #bbb;
+  --c-border: #3d3d3d;
+  --c-accent: #ec1d1d;
+  --c-accent-hover: #c72626;
+  --c-box: #2c2c2c;
+  --c-box-alt: #585858;
+  --c-warn: #ffb347;
+  --c-error: #ff686e;
+  --c-track-confirm: #4caf50;
+  --c-track-wait: #ff9800;
+  --c-track-skip: #607d8b;
+  --c-shadow: rgba(0, 0, 0, 0.4);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --transition-fast: 0.15s ease;
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --c-bg: #fafafa;
+  --c-bg-alt: #ffffff;
+  --c-bg-alt2: #ffffff;
+  --c-text: #232323;
+  --c-text-dim: #555;
+  --c-border: #dcdcdc;
+  --c-accent: #d40000;
+  --c-accent-hover: #b00000;
+  --c-box: #f2f2f2;
+  --c-box-alt: #e0e0e0;
+  --c-warn: #c96a00;
+  --c-error: #d33038;
+  --c-track-confirm: #2e7d32;
+  --c-track-wait: #ef6c00;
+  --c-track-skip: #546e7a;
+  --c-shadow: rgba(0, 0, 0, 0.15);
+  color-scheme: light;
+}
+
+html,
+body {
+  min-width: 0 !important;
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+.stats-header {
+  margin: 30px 0 15px;
+  font-size: 2rem;
+  font-weight: 400;
+  text-align: center;
+}
+
+.stats-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 20px;
+  background: var(--c-bg-alt);
+  padding: 14px 18px;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 4px var(--c-shadow);
+}
+
+.stats-refresh {
+  background: var(--c-accent);
+  color: #fff;
+  border: 0;
+  padding: 8px 18px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.stats-refresh:hover {
+  background: var(--c-accent-hover);
+}
+
+.stats-refresh:active {
+  transform: translateY(1px);
+}
+
+.stats-last-update {
+  font-size: 0.9rem;
+  color: var(--c-text-dim);
+  transition: color 0.4s;
+}
+
+.stats-last-update.flash {
+  color: var(--c-text);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+  margin-bottom: 40px;
+}
+
+.tracker-card {
+  background: var(--c-bg-alt2);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--c-border);
+}
+
+.tracker-card.aggregate-card {
+  outline: 2px solid var(--c-accent);
+}
+
+.tracker-card header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 8px;
+}
+
+/* Adaptive spacing for aggregate card container: scales with viewport height */
+#aggregateHost {
+  margin-top: clamp(8px, 1.5vh, 20px);
+}
+
+#aggregateHost:empty {
+  margin-top: 0;
+}
+
+/* Provide spacing below the aggregate block only when it exists */
+#aggregateHost:not(:empty) {
+  margin-bottom: clamp(14px, 2vh, 34px);
+}
+
+.tracker-card h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 400;
+  flex: 1;
+}
+
+.tracker-card .ico {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+.tracker-meta {
+  font-size: 0.75rem;
+  color: var(--c-text-dim);
+  margin-top: 2px;
+}
+
+.tracker-stats {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 4px 14px 14px;
+  gap: 10px;
+}
+
+.stat-box {
+  background: var(--c-box);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  flex: 1 1 calc(50% - 10px);
+  min-width: 110px;
+}
+
+.stat-box.big {
+  flex-basis: 100%;
+}
+
+.stat-inline {
+  background: var(--c-box);
+  flex: 0 0 auto;
+  text-align: right;
+  padding: 6px 10px;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.65rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.05rem;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.tracks-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--c-box);
+  margin-top: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.tracks-bar span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.tracks-bar .confirm {
+  background: var(--c-track-confirm);
+}
+
+.tracks-bar .wait {
+  background: var(--c-track-wait);
+}
+
+.tracks-bar .skip {
+  background: var(--c-track-skip);
+}
+
+.tracks-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 0.6rem;
+}
+
+.tracks-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.dot-confirm {
+  background: var(--c-track-confirm);
+}
+
+.dot-wait {
+  background: var(--c-track-wait);
+}
+
+.dot-skip {
+  background: var(--c-track-skip);
+}
+
+.search-box,
+.sort-select {
+  border: 0;
+  background: var(--c-box-alt);
+  color: var(--c-text);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  transition: background var(--transition-fast);
+}
+
+.search-box {
+  min-width: 200px;
+}
+
+.search-box:focus,
+.sort-select:focus {
+  outline: 2px solid var(--c-accent);
+}
+
+.empty-msg {
+  text-align: center;
+  margin: 40px 0;
+  font-size: 1.2rem;
+  color: var(--c-text-dim);
+}
+
+.stale {
+  color: var(--c-warn);
+}
+
+.very-stale {
+  color: var(--c-error);
+  font-weight: 500;
+}
+
+.filter-inline {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.top-link {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+}
+
+.cards-counter {
+  font-size: 0.9rem;
+  color: var(--c-text-dim);
+}
+
+@media (max-width: 900px) {
+  .stat-box {
+    flex: 1 1 calc(50% - 10px);
+  }
+
+  .stat-box.big {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 1100px) {
+  body.stats-wide #page {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .stats-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stats-toolbar .filter-inline {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .filter-inline > * {
+    flex: 1 1 auto;
+  }
+
+  .filter-inline span.cards-counter {
+    flex: 0 0 auto;
+  }
+
+  .search-box,
+  .sort-select {
+    width: 100%;
+  }
+
+  .stats-refresh,
+  .btn-secondary {
+    width: auto;
+  }
+
+  .tracker-card header {
+    padding: 10px 12px 6px;
+  }
+
+  .stat-box {
+    padding: 6px 8px;
+  }
+
+  .tracks-legend {
+    font-size: 0.55rem;
+  }
+
+  body.stats-compact .tracks-legend {
+    font-size: 0.5rem;
+  }
+
+  #toggleWidth {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-header {
+    font-size: 1.6rem;
+    margin-top: 20px;
+  }
+
+  .stat-value {
+    font-size: 0.9rem;
+  }
+
+  body.stats-compact .stat-value {
+    font-size: 0.8rem;
+  }
+
+  .stat-label {
+    font-size: 0.55rem;
+  }
+
+  body.stats-compact .stat-label {
+    font-size: 0.5rem;
+  }
+
+  .tracks-legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  }
+}
+
+body.stats-wide #page {
+  max-width: 95vw;
+}
+
+body.stats-wide .stats-toolbar {
+  border-radius: var(--radius-lg);
+}
+
+.btn-secondary {
+  background: var(--c-box-alt);
+  color: var(--c-text);
+  border: 0;
+  padding: 8px 18px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: var(--c-accent);
+}
+
+.btn-secondary:active {
+  transform: translateY(1px);
+}
+
+/* Compact mode adjustments */
+body.stats-compact .tracker-card header {
+  padding: 8px 10px 4px;
+}
+
+body.stats-compact .tracker-card h3 {
+  font-size: 0.95rem;
+}
+
+body.stats-compact .stat-box {
+  padding: 6px 8px;
+}
+
+body.stats-compact .stat-value {
+  font-size: 0.85rem;
+}
+
+body.stats-compact .stat-label {
+  font-size: 0.55rem;
+  margin-bottom: 2px;
+}
+
+body.stats-compact .tracks-legend {
+  font-size: 0.5rem;
+}
+
+body.stats-compact .tracker-card {
+  border-radius: 8px;
+}
+
+body.stats-compact .stats-grid {
+  gap: 12px;
+}
+
+body.stats-compact .stats-toolbar {
+  padding: 10px 14px;
+  gap: 8px;
+}
+
+body.stats-compact .search-box,
+body.stats-compact .sort-select {
+  padding: 6px 10px;
+}
+
+body.stats-compact .stats-refresh,
+body.stats-compact .btn-secondary {
+  padding: 6px 12px;
+}

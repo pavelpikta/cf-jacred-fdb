@@ -1,0 +1,51 @@
+###############################################
+# Root .gitignore
+# Purpose: Ignore build outputs, caches, local env & editor noise
+# Keep: src/, config files (wrangler.toml, tsconfig.json), lockfile
+###############################################
+
+# Node dependencies & logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS / Editor cruft
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Environment / local secrets (add as needed)
+.env
+.env.*.local
+
+# Build artifacts (reproducible via npm run build / build:prod)
+dist/
+dist-*/
+coverage/
+.cache/
+.tmp/
+tmp/
+*.tsbuildinfo
+
+# Source maps (not needed in repo; uploaded separately if desired)
+*.map
+
+# Esbuild / tooling caches
+.esbuild/
+
+# Lock files: we KEEP package-lock.json for reproducible builds
+# (remove the next line if you ever decide to ignore it)
+# package-lock.json
+
+# Manifest generated at build time
+asset-manifest.json
+
+# Cloudflare worker library
+!lib/
+
+# End of file

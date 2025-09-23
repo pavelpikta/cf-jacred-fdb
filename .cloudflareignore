@@ -1,0 +1,26 @@
+# Cloudflare Pages ignore list
+# Only ship the runtime bundle + static assets.
+
+# Node / tooling
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
+*.ts
+src/
+
+# Project meta / docs
+README.md
+
+# Development maps (keep worker map if you enable upload_source_maps)
+*.map
+!_worker.js.map
+
+# Editor / misc
+.vscode/
+.idea/
+*.log
+
+# Git / CI (not served)
+.github/
+.gitkeep

@@ -1,0 +1,38 @@
+{
+  "name": "cf-jacred-fbd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:assets": "node scripts/copy-static.mjs",
+    "build:worker": "esbuild src/worker.ts --bundle --format=esm --platform=browser --outfile=dist/_worker.js --sourcemap",
+    "build:worker:prod": "esbuild src/worker.ts --bundle --format=esm --platform=browser --outfile=dist/_worker.js --sourcemap --minify",
+    "build": "npm run typecheck && npm run clean && npm run build:assets && npm run build:worker",
+    "build:prod": "npm run typecheck && npm run clean && ASSET_HASH=1 MINIFY=1 node scripts/copy-static.mjs && npm run build:worker:prod",
+    "typecheck": "tsc --noEmit",
+    "dev": "npm run build && wrangler pages dev dist",
+    "watch": "concurrently -k \"npm:watch:assets\" \"npm:watch:worker\"",
+    "watch:worker": "esbuild src/worker.ts --bundle --format=esm --platform=browser --outfile=dist/_worker.js --sourcemap --watch",
+    "watch:assets": "nodemon -e html,css,js,svg,png,jpg,jpeg,gif,webp,avif --watch public --exec 'node scripts/copy-static.mjs'",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240919.0",
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.25.10",
+    "nodemon": "^3.1.4",
+    "typescript": "^5.5.4",
+    "eslint": "^9.13.0",
+    "@typescript-eslint/parser": "^8.8.1",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "prettier": "^3.3.3",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-unicorn": "^55.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
