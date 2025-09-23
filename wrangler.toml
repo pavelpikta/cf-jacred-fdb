@@ -3,10 +3,10 @@ pages_build_output_dir = "./dist"  # Build output now in ./dist
 compatibility_date = "2025-09-23"  # Keep pinned; update intentionally
 
 # Inheritable / non-inheritable bindings
-[vars]
-UPSTREAM_ORIGIN = ""  # Default (production + local dev) upstream API origin
-API_KEY = ""          # Optional: set to a single key or comma-separated keys to require auth
-ERROR_LOCALE = "en"   # Optional: externalize to JSON per locale
+# [vars]
+# UPSTREAM_ORIGIN = ""  # Default (production + local dev) upstream API origin
+# API_KEY = ""          # Optional: set to a single key or comma-separated keys to require auth
+# ERROR_LOCALE = "en"   # Optional: externalize to JSON per locale
 
 # Source maps: set true if you want improved stack traces in logs for _worker.js
 upload_source_maps = true
