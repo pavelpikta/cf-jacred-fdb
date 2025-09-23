@@ -1,4 +1,4 @@
-name = "cf-jacred-fbd              # Pages project name
+name = "cf-jacred-jfd"              # Pages project name
 pages_build_output_dir = "./dist"  # Build output now in ./dist
 compatibility_date = "2025-09-23"  # Keep pinned; update intentionally
 
