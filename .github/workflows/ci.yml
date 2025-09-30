@@ -1,0 +1,57 @@
+---
+name: CI
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'develop'
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+  pull_request:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint / Format / Typecheck / Build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node:
+          - '22.x'
+          - '24.x'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+
+      - name: Use Node ${{ matrix.node }}
+        uses: actions/setup-node@v5.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (dev)
+        run: npm run build

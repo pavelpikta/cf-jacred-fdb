@@ -4,7 +4,10 @@ export function getUpstreamOrigin(env: EnvLike): string {
 }
 
 export const LOCAL_PREFIX = '/api';
-export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/'];
+// Direct passthrough prefixes (bypass local /api mapping logic)
+export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'];
+// Subset of direct prefixes that are always allowed without an API key even if API_KEY is configured.
+export const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'];
 export const ALLOWED_METHODS = ['GET', 'HEAD', 'OPTIONS', 'POST'] as const;
 export const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -25,6 +28,12 @@ export const DEFAULT_TORRSERVER_TIMEOUT_MS = 15000;
 
 export function isDirectPath(path: string): boolean {
   return DIRECT_PREFIXES.some((p) => path === p || path.startsWith(p));
+}
+
+// Returns true if a direct path should be allowed without providing an API key
+// even when API key enforcement is enabled globally.
+export function isDirectApiKeyExempt(path: string): boolean {
+  return DIRECT_API_KEY_EXEMPT_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
 }
 
 // Centralized helper for identifying the stats HTML (supports legacy variants)
