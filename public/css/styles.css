@@ -400,6 +400,24 @@ h1 {
   text-align: center;
 }
 
+/* Last DB update badge */
+.last-update {
+  font-size: 12px;
+  color: #b5b5b5;
+  text-align: right;
+  margin-top: -4px;
+  margin-bottom: 4px;
+  font-weight: 300;
+  opacity: 0.9;
+}
+
+@media (max-width: 600px) {
+  .last-update {
+    text-align: left;
+    margin-top: 6px;
+  }
+}
+
 .logo-icon {
   width: 250px;
 }

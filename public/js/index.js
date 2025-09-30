@@ -469,6 +469,32 @@
   // Initial search
   performSearch();
 
+  /* ---------------------- Last Update (DB) ---------------------- */
+  (function initLastUpdate() {
+    const el = document.getElementById('lastUpdateDb');
+    if (!el) return;
+    function apply(text) {
+      if (!text) return;
+      // Basic sanity: expect something like DD.MM.YYYY HH:MM
+      if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(text.trim())) {
+        el.textContent = 'Последнее обновление базы: ' + text.trim();
+      } else {
+        el.textContent = 'Последнее обновление базы: ' + text.trim();
+      }
+    }
+    function load() {
+      fetch('/lastupdatedb', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.text() : Promise.reject()))
+        .then(apply)
+        .catch(() => {
+          /* silent */
+        });
+    }
+    load();
+    // Refresh every 5 minutes (server might update periodically)
+    setInterval(load, 5 * 60 * 1000);
+  })();
+
   /* ---------------------- Back To Top ---------------------- */
   (function initBackToTop() {
     const $btn = $('#back-to-top');
