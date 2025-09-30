@@ -13,6 +13,10 @@
 [![Architecture](https://img.shields.io/badge/Docs-Architecture-blueviolet)](./ARCHITECTURE.md)
 [![Русская версия](https://img.shields.io/badge/Docs-Русский-green)](./README.ru.md)
 
+## AI Documentation
+
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pavelpikta/cf-jacred-fdb)
+
 > ⚠️ Early alpha: **public API surface / HTML structure may still change**. Pin a commit if you depend on it.
 
 Edge‑accelerated torrent meta search UI + tracker statistics dashboard delivered via Cloudflare Pages + a custom `_worker.js` (API gateway, security headers, caching, TorrServer helpers) that fronts an HTTP‑only upstream API.

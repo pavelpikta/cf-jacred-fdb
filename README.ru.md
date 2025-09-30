@@ -16,6 +16,10 @@
 [![Architecture RU](https://img.shields.io/badge/Архитектура-RU-blueviolet)](./ARCHITECTURE.ru.md)
 [![English](https://img.shields.io/badge/Docs-English-lightgreen)](./README.md)
 
+## AI Документация
+
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pavelpikta/cf-jacred-fdb)
+
 > ⚠️ Ранняя альфа: **публичное API и HTML структура могут измениться**. Зафиксируйте коммит, если зависите от интерфейса.
 
 Edge‑ускоренный UI для метапоиска торрент раздач + дашборд статистики трекеров на базе Cloudflare Pages и кастомного `_worker.js` (API gateway, заголовки безопасности, кеширование, помощники TorrServer) поверх HTTP апстрима.
