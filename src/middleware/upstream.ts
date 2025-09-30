@@ -1,4 +1,4 @@
-import { STRIP_RESPONSE_HEADERS } from '../lib/constants';
+import { STRIP_RESPONSE_HEADERS, isDirectApiKeyExempt } from '../lib/constants';
 import { mapUpstreamPath } from '../lib/routing';
 import { errorResponse, badRequest } from '../lib/errors';
 import { cachedFetch } from '../lib/fetching';
@@ -11,8 +11,9 @@ export const upstream: Middleware = async (ctx) => {
   // Only run if we haven't produced a response yet and this is API or direct path.
   if (!ctx.isApi && !ctx.direct) return; // static assets handled earlier
 
-  // API key enforcement (non-conf paths): do not allow if invalid.
-  if ((ctx.isApi || ctx.direct) && ctx.apiKey.keyEnforced && !ctx.apiKey.keyValid)
+  // API key enforcement (non-conf paths): do not allow if invalid, allow API key exempt prefixes
+  const apiKeyExempt = ctx.direct && isDirectApiKeyExempt(ctx.pathname);
+  if ((ctx.isApi || ctx.direct) && !apiKeyExempt && ctx.apiKey.keyEnforced && !ctx.apiKey.keyValid)
     return errorResponse('forbidden', 'forbidden', 403);
 
   // Validate path encoding
