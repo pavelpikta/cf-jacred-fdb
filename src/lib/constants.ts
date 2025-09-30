@@ -4,7 +4,7 @@ export function getUpstreamOrigin(env: EnvLike): string {
 }
 
 export const LOCAL_PREFIX = '/api';
-export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/'];
+export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'];
 export const ALLOWED_METHODS = ['GET', 'HEAD', 'OPTIONS', 'POST'] as const;
 export const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
