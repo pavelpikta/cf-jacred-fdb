@@ -91,8 +91,8 @@
   };
 
   // State management
-  let allResults = [];        // All results from API (unfiltered)
-  let filteredResults = [];  // Filtered results based on active filters
+  let allResults = []; // All results from API (unfiltered)
+  let filteredResults = []; // Filtered results based on active filters
 
   /**
    * Filter Cache
@@ -100,12 +100,12 @@
    * Populated once per search to enable filter dropdown population.
    */
   const filterCache = {
-    voice: [],      // Voice-over options
-    tracker: [],    // Tracker identifiers
-    year: [],       // Release years
-    season: [],    // Season numbers
-    category: [],  // Category types
-    quality: []    // Video quality levels
+    voice: [], // Voice-over options
+    tracker: [], // Tracker identifiers
+    year: [], // Release years
+    season: [], // Season numbers
+    category: [], // Category types
+    quality: [], // Video quality levels
   };
 
   /* ========================================================================
@@ -292,9 +292,7 @@
       .join('\n');
 
     $results.html(html);
-    $resultsSummary
-      .text(`Найдено: ${filteredResults.length} / Всего: ${allResults.length}`)
-      .show();
+    $resultsSummary.text(`Найдено: ${filteredResults.length} / Всего: ${allResults.length}`).show();
 
     // Force reflow to trigger CSS animations (read offsetHeight to flush layout)
     void $results[0].offsetHeight;
@@ -407,9 +405,9 @@
   function applyFilters() {
     filteredResults = allResults.filter((r) => {
       // Track filter evaluation state
-      let pass = false;  // Result passed at least one filter
-      let any = false;   // Any filter is active
-      let fail = false;  // Result failed at least one filter
+      let pass = false; // Result passed at least one filter
+      let any = false; // Any filter is active
+      let fail = false; // Result failed at least one filter
       const quality = $('[name="quality"]', $filterBox).val();
       const type = $('[name="type"]', $filterBox).val();
       const year = $('[name="year"]', $filterBox).val();
@@ -472,8 +470,8 @@
 
       // Final decision: if any filters active, result must pass all (AND logic)
       if (any) {
-        if (fail) return false;  // Exclude if any filter failed
-        return pass;             // Include only if all filters passed
+        if (fail) return false; // Exclude if any filter failed
+        return pass; // Include only if all filters passed
       }
       // No filters active: include all results
       return true;
@@ -562,8 +560,8 @@
             // Process results: add date formatting and timestamps
             allResults = json.map((r) => {
               const d = new Date(r.createTime);
-              r.date = d.getTime();           // Epoch timestamp for sorting
-              r.dateHuman = fmtDate(d);       // Human-readable date string
+              r.date = d.getTime(); // Epoch timestamp for sorting
+              r.dateHuman = fmtDate(d); // Human-readable date string
               return r;
             });
 
@@ -578,7 +576,7 @@
 
             // Show filter panel now that we have results
             $filterBox.show();
-            showOnly(null);  // Hide all message states
+            showOnly(null); // Hide all message states
           } else {
             // No results found
             showOnly($noresults);
@@ -710,7 +708,7 @@
     keyupTimer = setTimeout(() => {
       applyFilters();
       render();
-    }, 200);  // 200ms debounce delay
+    }, 200); // 200ms debounce delay
   });
   $('.filter-button', $filterBox).on('click', function () {
     resetFilter();
@@ -820,8 +818,8 @@
       window.matchMedia('(max-width:640px)').matches;
     // Adaptive threshold: lower on small screens for better UX
     const threshold = smallScreen ? 90 : 160;
-    let visible = false;  // Current visibility state
-    let rafId = null;     // RequestAnimationFrame ID for throttling
+    let visible = false; // Current visibility state
+    let rafId = null; // RequestAnimationFrame ID for throttling
 
     /**
      * Get current scroll position (cross-browser compatible)
@@ -854,7 +852,7 @@
      * Prevents multiple concurrent evaluations
      */
     function onScroll() {
-      if (rafId) return;  // Already scheduled
+      if (rafId) return; // Already scheduled
       rafId = requestAnimationFrame(evaluate);
     }
 

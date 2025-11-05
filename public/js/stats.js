@@ -63,14 +63,14 @@ function __initStats() {
   const toggleNumbersBtn = $('#toggleNumbers');
 
   // State management
-  let rawData = [];          // Raw data from API (all trackers)
-  let viewData = [];         // Filtered and sorted data for display
-  let autoRefreshTimer = null;  // Interval timer for auto-refresh
+  let rawData = []; // Raw data from API (all trackers)
+  let viewData = []; // Filtered and sorted data for display
+  let autoRefreshTimer = null; // Interval timer for auto-refresh
 
   // localStorage keys for caching and preferences
-  const CACHE_KEY = 'statsCacheV1';        // Cache key for statistics data
-  const CACHE_TTL_MS = 5 * 60 * 1000;     // Cache TTL: 5 minutes
-  const THEME_KEY = 'statsTheme';          // Theme preference: 'dark' | 'light'
+  const CACHE_KEY = 'statsCacheV1'; // Cache key for statistics data
+  const CACHE_TTL_MS = 5 * 60 * 1000; // Cache TTL: 5 minutes
+  const THEME_KEY = 'statsTheme'; // Theme preference: 'dark' | 'light'
   const NUM_MODE_KEY = 'statsNumbersFull'; // Number format: '1' (full) | '0' (abbreviated)
 
   // Number formatting mode preference
@@ -169,7 +169,7 @@ function __initStats() {
   function saveCache() {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: rawData }));
-    } catch (e) { }
+    } catch (e) {}
   }
 
   /**
@@ -419,7 +419,7 @@ function __initStats() {
       }
       const ls = localStorage.getItem('api_key');
       if (ls) return '&apikey=' + encodeURIComponent(ls);
-    } catch (e) { }
+    } catch (e) {}
     return '';
   }
 
@@ -478,7 +478,7 @@ function __initStats() {
             if (jqXHR.responseText && jqXHR.responseText.length < 500) {
               msg += ' — ' + jqXHR.responseText.replace(/</g, '&lt;');
             }
-          } catch (_) { }
+          } catch (_) {}
         }
         errorBox.html(msg).show();
         console.error('Stats fetch failed:', {
