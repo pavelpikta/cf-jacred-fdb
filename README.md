@@ -2,15 +2,17 @@
 
 <!-- markdownlint-disable MD033 -->
 
+[![CI](https://img.shields.io/github/actions/workflow/status/pavelpikta/cf-jacred-fdb/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pavelpikta/cf-jacred-fdb/actions)
 [![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-orange?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/pages/)
-[![Runtime](https://img.shields.io/badge/Runtime-Workers-black?logo=cloudflare)](https://developers.cloudflare.com/workers/)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)
-![esbuild](https://img.shields.io/badge/Bundler-esbuild-ffcf00)
-![ESLint](https://img.shields.io/badge/Lint-ESLint-4B32C3?logo=eslint&logoColor=white)
-![Prettier](https://img.shields.io/badge/Format-Prettier-f7b93e?logo=prettier&logoColor=black)
-![Status](https://img.shields.io/badge/Status-Alpha-blue)
-![License](https://img.shields.io/badge/License-TBD-lightgrey)
-[![Architecture](https://img.shields.io/badge/Docs-Architecture-blueviolet)](./ARCHITECTURE.md)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-black?logo=cloudflare)](https://developers.cloudflare.com/workers/)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178c6?logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-≥18.0.0-339933?logo=node.js&logoColor=white)
+![ESBuild](https://img.shields.io/badge/ESBuild-0.25.12-FFCF00?logo=esbuild&logoColor=black)
+![ESLint](https://img.shields.io/badge/ESLint-9.39.1-4B32C3?logo=eslint&logoColor=white)
+![Prettier](https://img.shields.io/badge/Prettier-3.3.3-F7B93E?logo=prettier&logoColor=black)
+![Version](https://img.shields.io/badge/Version-0.1.0-blue)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
+[![Architecture](https://img.shields.io/badge/Docs-architecture-blueviolet)](./ARCHITECTURE.md)
 [![Русская версия](https://img.shields.io/badge/Docs-Русский-green)](./README.ru.md)
 
 ## AI Documentation
@@ -274,7 +276,26 @@ npm run format
 
 ## License
 
-License TBD (add an OSS license such as MIT or Apache 2.0 to encourage contributions).
+See [LICENSE](LICENSE) for full details.
+
+```text
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+```
 
 ## Support / Issues
 
