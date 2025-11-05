@@ -1,18 +1,15 @@
 <!doctype html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html lang="ru">
   <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="./img/favicon.ico" />
     <title>Поиск торрентов</title>
-    <link
-      rel="preload"
-      href="https://fonts.googleapis.com/css?family=Rubik:300,400&display=auto"
-      as="style"
-    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css?family=Rubik:300,400&display=auto"
+      href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600&display=swap"
     />
     <link
       rel="search"
@@ -32,7 +29,7 @@
 
   <body>
     <div id="page">
-      <div style="text-align: right; margin-bottom: 10px">
+      <div class="page-header">
         <a href="/stats" class="top-link-btn" aria-label="Статистика трекеров"
           >Статистика трекеров</a
         >
@@ -47,9 +44,6 @@
         >
       </div>
       <div id="lastUpdateDb" class="last-update" aria-live="polite"></div>
-      <!-- <div class="logo">
-      <img src="./img/logo.svg" class="logo-icon" />
-    </div> -->
       <div id="searchForm">
         <form id="search" action="/">
           <fieldset>
@@ -65,51 +59,51 @@
             </div>
           </fieldset>
         </form>
-        <div id="apiKeyInfo" style="display: none" class="apikey-hint">
+        <div id="apiKeyInfo" class="apikey-hint hidden">
           Для выполнения поиска требуется API ключ. Появится окно для ввода.
         </div>
         <div id="liveAnnounce" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
         <div id="filter">
           <div class="filter-container">
             <div class="w2">
-              <div class="filter-label">Уточнить</div>
-              <input name="refine" placeholder="Например BDRip, WEB-DL, США" />
+              <label for="refine-input" class="filter-label">Уточнить</label>
+              <input id="refine-input" name="refine" placeholder="Например BDRip, WEB-DL, США" />
             </div>
             <div class="w2">
-              <div class="filter-label">Исключить</div>
-              <input name="exclude" placeholder="Например HEVC" />
+              <label for="exclude-input" class="filter-label">Исключить</label>
+              <input id="exclude-input" name="exclude" placeholder="Например HEVC" />
             </div>
             <div class="w4">
-              <div class="filter-label">Качество</div>
-              <select name="quality"></select>
+              <label for="quality-select" class="filter-label">Качество</label>
+              <select id="quality-select" name="quality" aria-label="Выбрать качество"></select>
             </div>
             <div class="w4">
-              <div class="filter-label">Тип видео</div>
-              <select name="type">
+              <label for="type-select" class="filter-label">Тип видео</label>
+              <select id="type-select" name="type" aria-label="Выбрать тип видео">
                 <option value="">Любое</option>
                 <option value="sdr">SDR</option>
                 <option value="hdr">HDR</option>
               </select>
             </div>
             <div class="w4">
-              <div class="filter-label">Озвучка</div>
-              <select name="voice"></select>
+              <label for="voice-select" class="filter-label">Озвучка</label>
+              <select id="voice-select" name="voice" aria-label="Выбрать озвучку"></select>
             </div>
             <div class="w4">
-              <div class="filter-label">Сезон</div>
-              <select name="season"></select>
+              <label for="season-select" class="filter-label">Сезон</label>
+              <select id="season-select" name="season" aria-label="Выбрать сезон"></select>
             </div>
             <div class="w4">
-              <div class="filter-label">Категория</div>
-              <select name="category"></select>
+              <label for="category-select" class="filter-label">Категория</label>
+              <select id="category-select" name="category" aria-label="Выбрать категорию"></select>
             </div>
             <div class="w4">
-              <div class="filter-label">Трекер</div>
-              <select name="tracker"></select>
+              <label for="tracker-select" class="filter-label">Трекер</label>
+              <select id="tracker-select" name="tracker" aria-label="Выбрать трекер"></select>
             </div>
             <div class="w4">
-              <div class="filter-label">Год</div>
-              <select name="year"></select>
+              <label for="year-select" class="filter-label">Год</label>
+              <select id="year-select" name="year" aria-label="Выбрать год"></select>
             </div>
             <div class="w4">
               <button class="filter-button">Сбросить фильтр</button>
@@ -129,13 +123,13 @@
             <input type="radio" name="sort" value="date" id="sortDate" />
             <label for="sortDate"> по дате</label>
           </div>
-          <div class="icheck-material-cyan" style="margin-left: auto">
+          <div class="icheck-material-cyan exact-search-wrapper">
             <input type="checkbox" name="exact" id="exactSearch" />
             <label for="exactSearch" id="exactLabel">Точный поиск</label>
           </div>
         </div>
       </div>
-      <div id="resultsSummary" class="results-summary" style="display: none"></div>
+      <div id="resultsSummary" class="results-summary hidden"></div>
       <div id="resultsDiv" class="" aria-live="polite" aria-busy="false"></div>
       <div id="empty" class="msg">Введите название фильма или сериала для поиска.</div>
       <div id="noresults" class="msg">По вашему запросу мы не чего не нашли.</div>

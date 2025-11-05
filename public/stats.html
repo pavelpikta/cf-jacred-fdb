@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Статистика трекеров</title>
     <link rel="icon" href="./img/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css?family=Rubik:300,400&display=auto"
+      href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600&display=swap"
     />
     <link rel="stylesheet" type="text/css" href="./css/styles.css" />
     <link rel="stylesheet" type="text/css" href="./css/stats.css" />
@@ -49,11 +51,11 @@
           <span class="stats-last-update" id="lastUpdate">—</span>
         </div>
       </div>
-      <div id="loading" class="msg" style="display: none">Загрузка статистики...</div>
-      <div id="error" class="msg" style="display: none">Ошибка загрузки данных.</div>
+      <div id="loading" class="msg">Загрузка статистики...</div>
+      <div id="error" class="msg">Ошибка загрузки данных.</div>
       <div id="aggregateHost"></div>
       <div id="statsGrid" class="stats-grid" aria-live="polite"></div>
-      <div id="emptyState" class="empty-msg" style="display: none">Ничего не найдено.</div>
+      <div id="emptyState" class="empty-msg">Ничего не найдено.</div>
     </div>
     <a href="/" id="back-to-top" title="На главную"></a>
     <script

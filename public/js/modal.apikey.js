@@ -26,18 +26,23 @@
     try {
       return localStorage.getItem(k);
     } catch (e) {
+      console.warn('localStorage read failed:', e);
       return null;
     }
   }
   function lsSet(k, v) {
     try {
       localStorage.setItem(k, v);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('localStorage write failed:', e);
+    }
   }
   function lsRemove(k) {
     try {
       localStorage.removeItem(k);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('localStorage remove failed:', e);
+    }
   }
 
   function fetchConf(withKey) {
@@ -84,8 +89,16 @@
     const key = $('#apiKeyInput').val().trim();
     if (!key) {
       $('#apiKeyError').text('Введите ключ').show();
+      $('#apiKeyInput').attr('aria-invalid', 'true').focus();
       return;
     }
+    // Validate key format (alphanumeric, reasonable length)
+    if (key.length < 3 || key.length > 100) {
+      $('#apiKeyError').text('Неверный формат ключа').show();
+      $('#apiKeyInput').attr('aria-invalid', 'true').focus();
+      return;
+    }
+    $('#apiKeyInput').attr('aria-invalid', 'false');
     closeModal(key);
   }
   $(document).on('click', '#apiKeyCancel', () => closeModal(null));

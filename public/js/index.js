@@ -62,28 +62,40 @@
   const filterCache = { voice: [], tracker: [], year: [], season: [], category: [], quality: [] };
 
   /* ---------------------- Utilities ---------------------- */
-  // (debounce utility removed; not currently needed on this page – retained in stats.js if needed later)
+  // Safe localStorage access with error handling
   function lsGet(key) {
     try {
       return window.localStorage.getItem(key);
     } catch (e) {
+      console.warn('localStorage access denied:', e);
       return null;
     }
   }
   function lsSet(key, val) {
     try {
       window.localStorage.setItem(key, val);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('localStorage write failed:', e);
+    }
   }
   function fmtDate(ts) {
-    const d = new Date(ts);
-    return (
-      d.getFullYear() +
-      '-' +
-      ('0' + (d.getMonth() + 1)).slice(-2) +
-      '-' +
-      ('0' + d.getDate()).slice(-2)
-    );
+    try {
+      const d = new Date(ts);
+      // Validate date
+      if (isNaN(d.getTime())) {
+        return 'Invalid date';
+      }
+      return (
+        d.getFullYear() +
+        '-' +
+        ('0' + (d.getMonth() + 1)).slice(-2) +
+        '-' +
+        ('0' + d.getDate()).slice(-2)
+      );
+    } catch (e) {
+      console.error('Date formatting error:', e);
+      return 'Error';
+    }
   }
 
   function setBusy(b) {
@@ -101,7 +113,9 @@
   /* ---------------------- Rendering ---------------------- */
   /** Build HTML string for a single search result card. */
   function buildItem(r) {
-    const trackerIco = './img/ico/' + r.tracker + '.ico';
+    // Sanitize tracker name to prevent XSS
+    const trackerName = (r.tracker || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '');
+    const trackerIco = `./img/ico/${trackerName}.ico`;
     const seeders = r.sid || 0;
     const leechers = r.pir || 0;
     const infoBlocks = [];
@@ -118,15 +132,23 @@
       );
       filesIcon = `<span class="files" data-files="1">≣ (${r.media.length})</span>`;
     }
-    const meta = TRACKER_META[r.tracker] || {};
+    const meta = TRACKER_META[trackerName] || {};
     const trackerColor = meta.color || '#262626';
-    const trackerLabel = meta.label || r.tracker;
+    const trackerLabel = meta.label || trackerName;
     const currentTrackerFilter = $('[name="tracker"]', $filterBox).val();
     const isActiveTracker =
       currentTrackerFilter &&
       currentTrackerFilter !== 'Любой' &&
-      currentTrackerFilter === r.tracker;
-    return `<div class="webResult item">\n  <p><a href="${r.url}" target="_blank" rel="noopener">${r.title}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${r.tracker}" style="--tracker-color:${trackerColor}" aria-label="${trackerLabel}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${r.tracker}"><span class="tracker-name">${r.tracker}</span></span>\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet"><a class="magneto ut-download-url" href="${r.magnet}"></a></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
+      currentTrackerFilter === trackerName;
+    // Escape HTML to prevent XSS
+    const escapeHtml = (str) => {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    };
+    const safeTitle = escapeHtml(r.title || 'Untitled');
+    const safeUrl = (r.url || '#').replace(/^javascript:/i, '');
+    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${trackerName}" style="--tracker-color:${trackerColor}" aria-label="${trackerLabel}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${trackerName}" loading="lazy" onerror="this.style.display='none'"></span>\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet"><a class="magneto ut-download-url" href="${r.magnet}"></a></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
   }
 
   /** Render current filteredResults collection into #resultsDiv with summary. */
@@ -321,7 +343,12 @@
         encodeURIComponent(query) +
         keyParam +
         (lsGet('exact') == '1' ? '&exact=true' : '');
-      $.ajax({ dataType: 'json', url, cache: false })
+      $.ajax({
+        dataType: 'json',
+        url,
+        cache: false,
+        timeout: 30000, // 30 second timeout
+      })
         .done((json) => {
           if (Array.isArray(json) && json.length) {
             allResults = json.map((r) => {
@@ -339,11 +366,14 @@
             showOnly($noresults);
           }
         })
-        .fail((xhr) => {
+        .fail((xhr, textStatus, errorThrown) => {
+          console.error('Search failed:', { status: xhr?.status, textStatus, errorThrown });
           if (xhr && xhr.status === 403) {
             $noresults.text('Доступ запрещён: неверный или отсутствующий API ключ').show();
+          } else if (textStatus === 'timeout') {
+            $noresults.text('Превышено время ожидания. Попробуйте снова.').show();
           } else {
-            showOnly($noresults);
+            $noresults.text('Ошибка поиска. Проверьте подключение к интернету.').show();
           }
         })
         .always(() => {
@@ -370,10 +400,13 @@
       if (live) {
         const labelMap = { sid: 'по количеству сидов', size: 'по размеру', date: 'по дате' };
         // Force text node replacement to trigger aria-live even if same string rapidly
-        live.textContent = 'Сортировка: ' + (labelMap[value] || value);
+        const message = 'Сортировка: ' + (labelMap[value] || value);
+        live.textContent = message;
+        // Also update page title for screen readers
+        document.title = `${message} - Поиск торрентов`;
       }
     } catch (e) {
-      /* noop */
+      console.warn('Accessibility announcement failed:', e);
     }
   }
   $('input[type=radio][name=sort]').on('change', function () {
@@ -476,18 +509,26 @@
     function apply(text) {
       if (!text) return;
       // Basic sanity: expect something like DD.MM.YYYY HH:MM
-      if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(text.trim())) {
-        el.textContent = 'Последнее обновление базы: ' + text.trim();
+      const trimmed = text.trim();
+      if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(trimmed)) {
+        el.textContent = 'Последнее обновление базы: ' + trimmed;
+        el.setAttribute('aria-label', `База данных обновлена ${trimmed}`);
       } else {
-        el.textContent = 'Последнее обновление базы: ' + text.trim();
+        el.textContent = 'Последнее обновление базы: ' + trimmed;
       }
     }
     function load() {
-      fetch('/lastupdatedb', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.text() : Promise.reject()))
+      fetch('/lastupdatedb', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.text();
+        })
         .then(apply)
-        .catch(() => {
-          /* silent */
+        .catch((err) => {
+          console.warn('Failed to fetch last update:', err);
         });
     }
     load();
