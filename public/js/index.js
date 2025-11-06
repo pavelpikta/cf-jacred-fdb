@@ -370,8 +370,7 @@
     const $sel = $('[name="' + name + '"]', $filterBox).empty();
     values.forEach((v) => {
       const value = v != null ? String(v) : '';
-      const useMappedLabel =
-        labelMap && Object.prototype.hasOwnProperty.call(labelMap, value);
+      const useMappedLabel = labelMap && Object.prototype.hasOwnProperty.call(labelMap, value);
       const label = useMappedLabel ? labelMap[value] : v;
       const safeValue = escapeHtml(value);
       const safeLabel = escapeHtml(label != null ? String(label) : '');
