@@ -465,7 +465,7 @@ h1 {
   text-indent: -9999px;
   overflow: hidden;
   height: 90px;
-  cursor: hand;
+  cursor: pointer;
 }
 
 #searchForm,

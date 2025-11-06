@@ -2,7 +2,7 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Статистика трекеров</title>
     <!-- Favicons -->
     <link rel="icon" type="image/x-icon" href="./img/favicon.ico" />
@@ -29,13 +29,16 @@
       <div class="logo"></div>
       <div class="stats-toolbar">
         <div class="filter-inline">
+          <label for="searchTracker" class="visually-hidden">Поиск трекера</label>
           <input
             type="text"
             id="searchTracker"
             class="search-box"
             placeholder="Фильтр по имени..."
+            aria-label="Поиск трекера по имени"
           />
-          <select id="sortSelect" class="sort-select" title="Сортировка">
+          <label for="sortSelect" class="visually-hidden">Сортировка</label>
+          <select id="sortSelect" class="sort-select" aria-label="Сортировка результатов">
             <option value="name">По имени</option>
             <option value="newtor">Новые торренты (desc)</option>
             <option value="update">Изменения (desc)</option>
@@ -44,29 +47,54 @@
             <option value="wait">Ожидает (desc)</option>
             <option value="skip">Пропущено (desc)</option>
           </select>
-          <span class="cards-counter" id="cardsCounter"></span>
+          <span
+            class="cards-counter"
+            id="cardsCounter"
+            aria-live="polite"
+            aria-atomic="true"
+          ></span>
         </div>
         <div class="filter-inline">
-          <a href="/" class="btn-secondary" id="goHome" title="На главную">Главная</a>
-          <button class="stats-refresh" id="refreshBtn">Обновить</button>
-          <button class="btn-secondary" id="toggleNumbers" title="Переключить формат чисел">
+          <a href="/" class="btn-secondary" id="goHome" aria-label="На главную страницу">Главная</a>
+          <button class="stats-refresh" id="refreshBtn" aria-label="Обновить статистику">
+            Обновить
+          </button>
+          <button class="btn-secondary" id="toggleNumbers" aria-label="Переключить формат чисел">
             Полные числа
           </button>
-          <button class="btn-secondary" id="toggleWidth" title="Переключить ширину">
+          <button class="btn-secondary" id="toggleWidth" aria-label="Переключить широкий режим">
             Широкий режим
           </button>
-          <button class="btn-secondary" id="toggleCompact" title="Плотный режим">Компактный</button>
-          <button class="btn-secondary" id="toggleTheme" title="Переключить тему">Тема</button>
-          <span class="stats-last-update" id="lastUpdate">—</span>
+          <button
+            class="btn-secondary"
+            id="toggleCompact"
+            aria-label="Переключить компактный режим"
+          >
+            Компактный
+          </button>
+          <button class="btn-secondary" id="toggleTheme" aria-label="Переключить тему оформления">
+            Тема
+          </button>
+          <span class="stats-last-update" id="lastUpdate" aria-live="polite" aria-atomic="true"
+            >—</span
+          >
         </div>
       </div>
-      <div id="loading" class="msg">Загрузка статистики...</div>
-      <div id="error" class="msg">Ошибка загрузки данных.</div>
-      <div id="aggregateHost"></div>
-      <div id="statsGrid" class="stats-grid" aria-live="polite"></div>
-      <div id="emptyState" class="empty-msg">Ничего не найдено.</div>
+      <div id="loading" class="msg" role="status" aria-live="polite">Загрузка статистики...</div>
+      <div id="error" class="msg" role="alert" aria-live="assertive">Ошибка загрузки данных.</div>
+      <div id="aggregateHost" aria-label="Сводная статистика по всем трекерам"></div>
+      <div
+        id="statsGrid"
+        class="stats-grid"
+        aria-live="polite"
+        role="region"
+        aria-label="Статистика трекеров"
+      ></div>
+      <div id="emptyState" class="empty-msg" role="status" aria-live="polite">
+        Ничего не найдено.
+      </div>
     </div>
-    <a href="/" id="back-to-top" title="На главную"></a>
+    <a href="/" id="back-to-top" aria-label="Вернуться на главную страницу" title="На главную"></a>
     <script
       src="https://code.jquery.com/jquery-3.7.1.min.js"
       integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
