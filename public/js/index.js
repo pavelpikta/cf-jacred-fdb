@@ -116,7 +116,8 @@
    */
   function sanitizeUrl(url = '') {
     const trimmed = String(url || '').trim();
-    const sanitized = trimmed.replace(/^javascript:/i, '');
+    // Strip all leading "javascript:" protocols (case-insensitive) until none remain
+    const sanitized = trimmed.replace(/^(javascript:)+/i, '');
     return sanitized || '#';
   }
 
