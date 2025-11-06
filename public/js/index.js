@@ -930,17 +930,37 @@
       }
     }
     function load() {
-      fetch('/lastupdatedb', {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      })
+      const supportsAbort = typeof AbortController === 'function';
+      const controller = supportsAbort ? new AbortController() : null;
+      const timeoutId = supportsAbort
+        ? setTimeout(() => {
+            try {
+              controller.abort();
+            } catch (abortErr) {
+              console.warn('Failed to abort fetch:', abortErr);
+            }
+          }, 10000)
+        : null; // 10 second timeout
+      const fetchOptions = { cache: 'no-store' };
+      if (controller) {
+        fetchOptions.signal = controller.signal;
+      }
+
+      fetch('/lastupdatedb', fetchOptions)
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.text();
         })
         .then(apply)
         .catch((err) => {
-          console.warn('Failed to fetch last update:', err);
+          if (err && err.name === 'AbortError') {
+            console.warn('Last update request timed out after 10s.');
+          } else {
+            console.warn('Failed to fetch last update:', err);
+          }
+        })
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
         });
     }
     load();
