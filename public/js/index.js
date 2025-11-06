@@ -303,11 +303,13 @@
       currentTrackerFilter === trackerName;
 
     const safeTitle = escapeHtml(r.title || 'Untitled');
-    const safeUrl = (r.url || '#').replace(/^javascript:/i, '');
-    const hasMagnet = typeof r.magnet === 'string' && r.magnet.trim().length > 0;
-    const magnetHref = hasMagnet ? r.magnet.replace(/^javascript:/i, '') : '#';
+    const trimmedUrl = (r.url || '#').trim();
+    const safeUrl = trimmedUrl.replace(/^javascript:/i, '') || '#';
+    const trimmedMagnet = (r.magnet || '').trim();
+    const hasMagnet = trimmedMagnet.length > 0;
+    const magnetHref = hasMagnet ? trimmedMagnet.replace(/^javascript:/i, '') || '#' : '#';
     const safeMagnetHref = escapeAttribute(magnetHref);
-    const magnetEncoded = hasMagnet ? encodeURIComponent(r.magnet) : '';
+    const magnetEncoded = hasMagnet ? encodeURIComponent(trimmedMagnet) : '';
     const magnetButtonAttrs = hasMagnet
       ? `data-magnet="${magnetEncoded}"`
       : 'data-magnet="" disabled aria-disabled="true"';
