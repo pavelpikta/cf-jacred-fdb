@@ -247,7 +247,7 @@
     const trackerLabelSource = meta.label ? meta.label.split(':')[0] : r.tracker || trackerName;
     const trackerLabelText = escapeHtml((trackerLabelSource || trackerName || 'unknown').trim());
     const trackerLabelMarkup = trackerLabelText
-      ? `<span class="tracker-label" aria-hidden="true">${trackerLabelText}</span>`
+      ? `<span class="tracker-label" aria-hidden="true" style="--tracker-color:${trackerColor}">${trackerLabelText}</span>`
       : '';
 
     // Check if this tracker is currently active in filter (for visual highlight)
