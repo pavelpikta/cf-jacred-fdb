@@ -348,8 +348,8 @@
         }
         // Inject CSS variables for staggered animation (30ms delay per card)
         return itemHtml.replace(
-          '<div class="webResult',
-          `<div class="webResult" style="--result-index: ${idx}; animation-delay: ${idx * 0.03}s"`
+          /(<div class="webResult[^"]*")/,
+          `$1 style="--result-index: ${idx}; animation-delay: ${idx * 0.03}s"`
         );
       })
       .join('\n');
