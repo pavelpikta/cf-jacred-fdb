@@ -110,6 +110,17 @@
   }
 
   /**
+   * Sanitize URL by stripping javascript: protocol and falling back to '#'
+   * @param {string} url - URL to sanitize
+   * @returns {string} - Sanitized URL (stripped of javascript: or '#')
+   */
+  function sanitizeUrl(url = '') {
+    const trimmed = String(url || '').trim();
+    const sanitized = trimmed.replace(/^javascript:/i, '');
+    return sanitized || '#';
+  }
+
+  /**
    * Normalize tracker identifiers for consistent comparisons and lookups
    * @param {string} str - Tracker identifier as provided by API
    * @returns {string} - Sanitized tracker identifier (fallbacks to 'unknown')
@@ -291,14 +302,16 @@
     // Get tracker metadata for badge styling and tooltip
     const meta = TRACKER_META[trackerName] || {};
     const trackerColor = meta.color || '#262626';
-    const safeTrackerColor = escapeHtml(trackerColor);
-    const trackerTooltip = escapeHtml(meta.label || trackerDisplay || trackerName);
+    const safeTrackerColor = escapeAttribute(trackerColor);
+    const trackerTooltip = meta.label || trackerDisplay || trackerName;
+    const safeTrackerTooltip = escapeAttribute(trackerTooltip);
     const trackerLabelSource = meta.label ? meta.label.split(':')[0] : trackerDisplay;
     const trackerLabelText = escapeHtml((trackerLabelSource || trackerDisplay || 'unknown').trim());
-    const safeTrackerDisplay = escapeHtml(trackerDisplay);
-    const safeTrackerName = escapeHtml(trackerName);
+    const safeTrackerDisplay = escapeAttribute(trackerDisplay);
+    const safeTrackerName = escapeAttribute(trackerName);
+    const safeTrackerColorStyle = escapeAttribute(trackerColor);
     const trackerLabelMarkup = trackerLabelText
-      ? `<span class="tracker-label" aria-hidden="true" style="--tracker-color:${safeTrackerColor}">${trackerLabelText}</span>`
+      ? `<span class="tracker-label" aria-hidden="true" style="--tracker-color:${safeTrackerColorStyle}">${trackerLabelText}</span>`
       : '';
 
     // Check if this tracker is currently active in filter (for visual highlight)
@@ -309,17 +322,18 @@
       currentTrackerFilter === trackerName;
 
     const safeTitle = escapeHtml(r.title || 'Untitled');
-    const trimmedUrl = (r.url || '#').trim();
-    const safeUrl = trimmedUrl.replace(/^javascript:/i, '') || '#';
+    const safeUrl = escapeAttribute(sanitizeUrl(r.url));
+    const safeIco = escapeAttribute(trackerIco);
     const trimmedMagnet = (r.magnet || '').trim();
     const hasMagnet = trimmedMagnet.length > 0;
-    const magnetHref = hasMagnet ? trimmedMagnet.replace(/^javascript:/i, '') || '#' : '#';
+    const magnetHref = hasMagnet ? sanitizeUrl(trimmedMagnet) : '#';
     const safeMagnetHref = escapeAttribute(magnetHref);
     const magnetEncoded = hasMagnet ? encodeURIComponent(trimmedMagnet) : '';
+    const safeMagnetEncoded = escapeAttribute(magnetEncoded);
     const magnetButtonAttrs = hasMagnet
-      ? `data-magnet="${magnetEncoded}"`
+      ? `data-magnet="${safeMagnetEncoded}"`
       : 'data-magnet="" disabled aria-disabled="true"';
-    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${safeTrackerName}" data-tracker-label="${safeTrackerDisplay}" style="--tracker-color:${safeTrackerColor}" aria-label="${trackerTooltip}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${safeTrackerName}" loading="lazy" onerror="this.style.display='none'"></span>${trackerLabelMarkup}\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet-controls"><span class="magnet"><a class="magneto ut-download-url" href="${safeMagnetHref}"></a></span><button type="button" class="magnet-copy-btn" ${magnetButtonAttrs} title="Скопировать magnet-ссылку" aria-label="Скопировать magnet-ссылку"></button></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
+    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${safeTrackerName}" data-tracker-label="${safeTrackerDisplay}" style="--tracker-color:${safeTrackerColor}" aria-label="${safeTrackerTooltip}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${safeIco}" alt="${safeTrackerName}" loading="lazy" onerror="this.style.display='none'"></span>${trackerLabelMarkup}\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet-controls"><span class="magnet"><a class="magneto ut-download-url" href="${safeMagnetHref}"></a></span><button type="button" class="magnet-copy-btn" ${magnetButtonAttrs} title="Скопировать magnet-ссылку" aria-label="Скопировать magnet-ссылку"></button></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
   }
 
   /**
@@ -404,7 +418,7 @@
       const value = v != null ? String(v) : '';
       const useMappedLabel = labelMap && Object.prototype.hasOwnProperty.call(labelMap, value);
       const label = useMappedLabel ? labelMap[value] : v;
-      const safeValue = escapeHtml(value);
+      const safeValue = escapeAttribute(value);
       const safeLabel = escapeHtml(label != null ? String(label) : '');
       $sel.append(`<option value="${safeValue}">${safeLabel}</option>`);
     });
@@ -893,7 +907,7 @@
       $sel.val('Любой');
     } else {
       if (!$('option[value="' + tr + '"]', $sel).length) {
-        const safeValue = escapeHtml(String(tr));
+        const safeValue = escapeAttribute(String(tr));
         const safeLabel = escapeHtml(String(label));
         $sel.append('<option value="' + safeValue + '">' + safeLabel + '</option>');
         filterCache.trackerLabels[tr] = label;
