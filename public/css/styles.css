@@ -825,6 +825,27 @@ input[type='radio'] {
   align-items: center;
 }
 
+.tracker-badges .tracker-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.04) 100%);
+  color: #f2f2f2;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  min-height: 28px;
+}
+
+@media (max-width: 640px) {
+  .tracker-badges .tracker-label {
+    font-size: 0.78rem;
+    padding: 3px 8px;
+  }
+}
+
 /* Divider before stats row */
 .webResult div.h2 .webResultTitle {
   position: relative;
@@ -1212,6 +1233,90 @@ span.leechers {
 span.magnet {
   width: 25px;
   display: inline-block;
+}
+
+.magnet-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.magnet-copy-btn {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background:
+    linear-gradient(135deg, rgba(70, 70, 70, 0.9) 0%, rgba(40, 40, 40, 0.95) 100%),
+    url('../img/copy.svg') no-repeat center;
+  background-size: 60%;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.magnet-copy-btn:hover,
+.magnet-copy-btn:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.2),
+    0 0 0 4px rgba(47, 47, 47, 0.8);
+  transform: translateY(-1px);
+}
+
+.magnet-copy-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.15),
+    0 0 0 4px rgba(47, 47, 47, 0.7);
+}
+
+.magnet-copy-btn:disabled,
+.magnet-copy-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.magnet-copy-btn.copied {
+  border-color: var(--color-success);
+  background-color: color-mix(in srgb, var(--color-success) 40%, #2d2d2d);
+}
+
+.magnet-copy-btn.copy-error {
+  border-color: #ff6969;
+  background-color: color-mix(in srgb, #ff6969 35%, #2d2d2d);
+}
+
+.magnet-copy-btn::after {
+  content: attr(data-feedback);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translate(-50%, 6px);
+  background: rgba(15, 15, 15, 0.95);
+  color: #ffffff;
+  font-size: 0.66rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+  z-index: var(--z-dropdown);
+}
+
+.magnet-copy-btn[data-feedback]::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 /* TorrServer inline button alignment inside new flex layout */

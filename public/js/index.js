@@ -243,7 +243,12 @@
     // Get tracker metadata for badge styling and tooltip
     const meta = TRACKER_META[trackerName] || {};
     const trackerColor = meta.color || '#262626';
-    const trackerLabel = meta.label || trackerName;
+    const trackerTooltip = meta.label || trackerName;
+    const trackerLabelSource = meta.label ? meta.label.split(':')[0] : r.tracker || trackerName;
+    const trackerLabelText = escapeHtml((trackerLabelSource || trackerName || 'unknown').trim());
+    const trackerLabelMarkup = trackerLabelText
+      ? `<span class="tracker-label" aria-hidden="true">${trackerLabelText}</span>`
+      : '';
 
     // Check if this tracker is currently active in filter (for visual highlight)
     const currentTrackerFilter = $('[name="tracker"]', $filterBox).val();
@@ -254,7 +259,14 @@
 
     const safeTitle = escapeHtml(r.title || 'Untitled');
     const safeUrl = (r.url || '#').replace(/^javascript:/i, '');
-    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${trackerName}" style="--tracker-color:${trackerColor}" aria-label="${trackerLabel}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${trackerName}" loading="lazy" onerror="this.style.display='none'"></span>\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet"><a class="magneto ut-download-url" href="${r.magnet}"></a></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
+    const hasMagnet = typeof r.magnet === 'string' && r.magnet.trim().length > 0;
+    const magnetHref = hasMagnet ? r.magnet.replace(/^javascript:/i, '') : '#';
+    const safeMagnetHref = escapeHtml(magnetHref);
+    const magnetEncoded = hasMagnet ? encodeURIComponent(r.magnet) : '';
+    const magnetButtonAttrs = hasMagnet
+      ? `data-magnet="${magnetEncoded}"`
+      : 'data-magnet="" disabled aria-disabled="true"';
+    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${trackerName}" style="--tracker-color:${trackerColor}" aria-label="${trackerTooltip}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${trackerName}" loading="lazy" onerror="this.style.display='none'"></span>${trackerLabelMarkup}\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet-controls"><span class="magnet"><a class="magneto ut-download-url" href="${safeMagnetHref}"></a></span><button type="button" class="magnet-copy-btn" ${magnetButtonAttrs} title="Скопировать magnet-ссылку" aria-label="Скопировать magnet-ссылку"></button></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
   }
 
   /**
@@ -727,6 +739,69 @@
   // Event delegation: File list toggle (works for dynamically rendered results)
   $results.on('click', 'span.files[data-files]', function () {
     $(this).closest('.webResult').find('.info > .files').toggleClass('show');
+  });
+
+  // Event delegation: Copy magnet link to clipboard
+  $results.on('click', '.magnet-copy-btn', function (e) {
+    e.preventDefault();
+    const $btn = $(this);
+    if ($btn.is(':disabled')) return;
+
+    const encoded = $btn.attr('data-magnet') || '';
+    const magnet = encoded ? decodeURIComponent(encoded) : '';
+
+    function showFeedback(state) {
+      const message = state === 'success' ? 'Скопировано' : 'Не удалось скопировать';
+      const cls = state === 'success' ? 'copied' : 'copy-error';
+      const existingTimeout = $btn.data('feedbackTimeout');
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+      $btn.removeClass('copied copy-error');
+      $btn.addClass(cls);
+      $btn.attr('data-feedback', message);
+      const timeoutId = setTimeout(() => {
+        $btn.removeClass('copied copy-error');
+        $btn.removeAttr('data-feedback');
+        $btn.removeData('feedbackTimeout');
+      }, 2000);
+      $btn.data('feedbackTimeout', timeoutId);
+    }
+
+    function fallbackCopy() {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = magnet;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showFeedback(successful ? 'success' : 'error');
+      } catch (err) {
+        console.warn('Fallback clipboard copy failed:', err);
+        showFeedback('error');
+      }
+    }
+
+    if (!magnet) {
+      showFeedback('error');
+      return;
+    }
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard
+        .writeText(magnet)
+        .then(() => showFeedback('success'))
+        .catch((err) => {
+          console.warn('Clipboard API failed:', err);
+          fallbackCopy();
+        });
+    } else {
+      fallbackCopy();
+    }
   });
 
   /**
