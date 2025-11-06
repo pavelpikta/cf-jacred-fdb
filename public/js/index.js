@@ -80,6 +80,17 @@
   }
 
   /**
+   * Normalize tracker identifiers for consistent comparisons and lookups
+   * @param {string} str - Tracker identifier as provided by API
+   * @returns {string} - Sanitized tracker identifier (fallbacks to 'unknown')
+   */
+  function normalizeTrackerName(str = '') {
+    const trimmed = (str || '').trim();
+    const cleaned = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+    return cleaned || 'unknown';
+  }
+
+  /**
    * Tracker Metadata Configuration
    * Maps tracker identifiers to their display colors and labels for badges.
    * Used for visual distinction and accessibility tooltips.
@@ -114,6 +125,7 @@
   const filterCache = {
     voice: [], // Voice-over options
     tracker: [], // Tracker identifiers
+    trackerLabels: {}, // Map of sanitized tracker value -> display label
     year: [], // Release years
     season: [], // Season numbers
     category: [], // Category types
@@ -219,8 +231,9 @@
    * @returns {string} - HTML string for the result card
    */
   function buildItem(r) {
-    // Sanitize tracker name to prevent XSS (only allow alphanumeric, underscore, hyphen)
-    const trackerName = (r.tracker || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '');
+    const trackerOriginal = (r.tracker || 'unknown').trim();
+    const trackerName = normalizeTrackerName(trackerOriginal);
+    const trackerDisplay = trackerOriginal || trackerName;
     const trackerIco = `./img/ico/${trackerName}.ico`;
     const seeders = r.sid || 0;
     const leechers = r.pir || 0;
@@ -234,7 +247,12 @@
     }
     let filesIcon = '';
     if (Array.isArray(r.media) && r.media.length) {
-      const list = r.media.map((f) => `<div>${f.path}</div>`).join('');
+      const list = r.media
+        .map((f) => {
+          const path = f && typeof f.path === 'string' ? f.path : '';
+          return `<div>${escapeHtml(path)}</div>`;
+        })
+        .join('');
       infoBlocks.push(
         `<div class="files"><div class="files-title">Файлы</div><div class="files-list">${list}</div></div>`
       );
@@ -243,11 +261,14 @@
     // Get tracker metadata for badge styling and tooltip
     const meta = TRACKER_META[trackerName] || {};
     const trackerColor = meta.color || '#262626';
-    const trackerTooltip = meta.label || trackerName;
-    const trackerLabelSource = meta.label ? meta.label.split(':')[0] : r.tracker || trackerName;
-    const trackerLabelText = escapeHtml((trackerLabelSource || trackerName || 'unknown').trim());
+    const safeTrackerColor = escapeHtml(trackerColor);
+    const trackerTooltip = escapeHtml(meta.label || trackerDisplay || trackerName);
+    const trackerLabelSource = meta.label ? meta.label.split(':')[0] : trackerDisplay;
+    const trackerLabelText = escapeHtml((trackerLabelSource || trackerDisplay || 'unknown').trim());
+    const safeTrackerDisplay = escapeHtml(trackerDisplay);
+    const safeTrackerName = escapeHtml(trackerName);
     const trackerLabelMarkup = trackerLabelText
-      ? `<span class="tracker-label" aria-hidden="true" style="--tracker-color:${trackerColor}">${trackerLabelText}</span>`
+      ? `<span class="tracker-label" aria-hidden="true" style="--tracker-color:${safeTrackerColor}">${trackerLabelText}</span>`
       : '';
 
     // Check if this tracker is currently active in filter (for visual highlight)
@@ -266,7 +287,7 @@
     const magnetButtonAttrs = hasMagnet
       ? `data-magnet="${magnetEncoded}"`
       : 'data-magnet="" disabled aria-disabled="true"';
-    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${trackerName}" style="--tracker-color:${trackerColor}" aria-label="${trackerTooltip}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${trackerName}" loading="lazy" onerror="this.style.display='none'"></span>${trackerLabelMarkup}\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet-controls"><span class="magnet"><a class="magneto ut-download-url" href="${safeMagnetHref}"></a></span><button type="button" class="magnet-copy-btn" ${magnetButtonAttrs} title="Скопировать magnet-ссылку" aria-label="Скопировать magnet-ссылку"></button></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
+    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${safeTrackerName}" data-tracker-label="${safeTrackerDisplay}" style="--tracker-color:${safeTrackerColor}" aria-label="${trackerTooltip}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${safeTrackerName}" loading="lazy" onerror="this.style.display='none'"></span>${trackerLabelMarkup}\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet-controls"><span class="magnet"><a class="magneto ut-download-url" href="${safeMagnetHref}"></a></span><button type="button" class="magnet-copy-btn" ${magnetButtonAttrs} title="Скопировать magnet-ссылку" aria-label="Скопировать magnet-ссылку"></button></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
   }
 
   /**
@@ -345,10 +366,21 @@
    * @param {string} name - Filter name (matches name attribute in HTML)
    * @param {Array<string>} values - Array of option values to populate
    */
-  function populateSelect(name, values) {
+  function populateSelect(name, values, labelMap) {
     const $sel = $('[name="' + name + '"]', $filterBox).empty();
-    values.forEach((v) => $sel.append(`<option value="${v}">${v}</option>`));
-    $sel.val(values[0]);
+    values.forEach((v) => {
+      const value = v != null ? String(v) : '';
+      const useMappedLabel =
+        labelMap && Object.prototype.hasOwnProperty.call(labelMap, value);
+      const label = useMappedLabel ? labelMap[value] : v;
+      const safeValue = escapeHtml(value);
+      const safeLabel = escapeHtml(label != null ? String(label) : '');
+      $sel.append(`<option value="${safeValue}">${safeLabel}</option>`);
+    });
+    if (values.length) {
+      const firstVal = values[0] != null ? String(values[0]) : '';
+      $sel.val(firstVal);
+    }
   }
 
   /**
@@ -368,6 +400,7 @@
   function initFilterLists() {
     filterCache.voice = ['Любая'];
     filterCache.tracker = ['Любой'];
+    filterCache.trackerLabels = { Любой: 'Любой' };
     const years = [];
     const seasons = [];
     const types = [];
@@ -377,7 +410,12 @@
       (r.voices || []).forEach((v) => {
         if (!filterCache.voice.includes(v)) filterCache.voice.push(v);
       });
-      if (!filterCache.tracker.includes(r.tracker)) filterCache.tracker.push(r.tracker);
+      const trackerLabel = typeof r.tracker === 'string' ? r.tracker : '';
+      const normalizedTracker = normalizeTrackerName(trackerLabel);
+      if (!filterCache.tracker.includes(normalizedTracker)) {
+        filterCache.tracker.push(normalizedTracker);
+        filterCache.trackerLabels[normalizedTracker] = trackerLabel.trim() || normalizedTracker;
+      }
       if (r.relased && !years.includes(r.relased)) years.push(r.relased);
       if (r.quality && !quality.includes(r.quality)) quality.push(r.quality);
       (r.seasons || []).forEach((s) => {
@@ -398,7 +436,7 @@
     filterCache.quality = ['Любое', ...quality];
 
     populateSelect('voice', filterCache.voice);
-    populateSelect('tracker', filterCache.tracker);
+    populateSelect('tracker', filterCache.tracker, filterCache.trackerLabels);
     populateSelect('year', filterCache.year);
     populateSelect('season', filterCache.season);
     populateSelect('category', filterCache.category);
@@ -460,7 +498,8 @@
         else fail = true;
       }
       if (tracker !== 'Любой') {
-        if (r.tracker == tracker) pass = true;
+        const normalizedTracker = normalizeTrackerName(r.tracker);
+        if (normalizedTracker === tracker) pass = true;
         else fail = true;
       }
       if (voice !== 'Любая') {
@@ -816,13 +855,17 @@
   $results.on('click', '.tracker-badge', function (e) {
     e.preventDefault();
     const tr = $(this).data('tracker');
+    const label = $(this).attr('data-tracker-label') || tr;
     const $sel = $('[name="tracker"]', $filterBox);
     const cur = $sel.val();
     if (cur === tr) {
       $sel.val('Любой');
     } else {
       if (!$('option[value="' + tr + '"]', $sel).length) {
-        $sel.append('<option value="' + tr + '">' + tr + '</option>');
+        const safeValue = escapeHtml(String(tr));
+        const safeLabel = escapeHtml(String(label));
+        $sel.append('<option value="' + safeValue + '">' + safeLabel + '</option>');
+        filterCache.trackerLabels[tr] = label;
       }
       $sel.val(tr);
     }
