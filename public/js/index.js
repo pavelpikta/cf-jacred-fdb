@@ -66,6 +66,18 @@
   const $input = $('#s');
   const $filterBox = $('#filter');
   const $form = $('#search');
+  const UA = navigator.userAgent;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(UA);
+  if (isSafari) {
+    document.documentElement.classList.add('ua-safari');
+  }
+
+  const escapeNode = document.createElement('div');
+
+  function escapeHtml(str = '') {
+    escapeNode.textContent = str;
+    return escapeNode.innerHTML;
+  }
 
   /**
    * Tracker Metadata Configuration
@@ -240,16 +252,6 @@
       currentTrackerFilter !== 'Любой' &&
       currentTrackerFilter === trackerName;
 
-    /**
-     * Escape HTML to prevent XSS attacks
-     * @param {string} str - String to escape
-     * @returns {string} - Escaped HTML string
-     */
-    const escapeHtml = (str) => {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    };
     const safeTitle = escapeHtml(r.title || 'Untitled');
     const safeUrl = (r.url || '#').replace(/^javascript:/i, '');
     return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${trackerName}" style="--tracker-color:${trackerColor}" aria-label="${trackerLabel}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${trackerName}" loading="lazy" onerror="this.style.display='none'"></span>\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet"><a class="magneto ut-download-url" href="${r.magnet}"></a></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
@@ -280,9 +282,13 @@
 
     // Build HTML with staggered animation delays for smooth visual effect
     // Each card gets a CSS variable and animation delay based on its index
+    const animateResults = !isSafari && filteredResults.length <= 200;
     const html = filteredResults
       .map((r, idx) => {
         const itemHtml = buildItem(r);
+        if (!animateResults) {
+          return itemHtml;
+        }
         // Inject CSS variables for staggered animation (30ms delay per card)
         return itemHtml.replace(
           '<div class="webResult',
@@ -295,7 +301,9 @@
     $resultsSummary.text(`Найдено: ${filteredResults.length} / Всего: ${allResults.length}`).show();
 
     // Force reflow to trigger CSS animations (read offsetHeight to flush layout)
-    void $results[0].offsetHeight;
+    if (animateResults && $results[0]) {
+      void $results[0].offsetHeight;
+    }
   }
 
   /* ========================================================================
