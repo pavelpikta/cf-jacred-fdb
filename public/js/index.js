@@ -80,12 +80,13 @@
   }
 
   /**
-   * Escape string for safe use inside double-quoted HTML attributes while keeping ampersands intact
+   * Escape string for safe use inside double-quoted HTML attributes
+   * Escapes special characters and bare ampersands (not part of valid HTML entities)
    * @param {string} value
    * @returns {string}
    */
   function escapeAttribute(value = '') {
-    return String(value).replace(/["'<>`]/g, (ch) => {
+    let escaped = String(value).replace(/["'<>`]/g, (ch) => {
       switch (ch) {
         case '"':
           return '&quot;';
@@ -101,6 +102,11 @@
           return ch;
       }
     });
+    // Escape bare ampersands that are not part of valid HTML entities
+    // Valid entities: &#123; (decimal), &#x1F; (hex), &amp; (named)
+    // Pattern matches & not followed by valid entity pattern: /#\d+;|#x[0-9a-fA-F]+;|\w+;/
+    escaped = escaped.replace(/&(?!#\d+;|#x[0-9a-fA-F]+;|\w+;)/g, '&amp;');
+    return escaped;
   }
 
   /**
