@@ -328,6 +328,7 @@
       // Caller will handle 403 if key is actually required
       if (!key) {
         $('#noresults,#error').first().text('API ключ не задан').show();
+        cb(null);
         return;
       }
 
