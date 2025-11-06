@@ -80,6 +80,30 @@
   }
 
   /**
+   * Escape string for safe use inside double-quoted HTML attributes while keeping ampersands intact
+   * @param {string} value
+   * @returns {string}
+   */
+  function escapeAttribute(value = '') {
+    return String(value).replace(/["'<>`]/g, (ch) => {
+      switch (ch) {
+        case '"':
+          return '&quot;';
+        case "'":
+          return '&#39;';
+        case '<':
+          return '&lt;';
+        case '>':
+          return '&gt;';
+        case '`':
+          return '&#96;';
+        default:
+          return ch;
+      }
+    });
+  }
+
+  /**
    * Normalize tracker identifiers for consistent comparisons and lookups
    * @param {string} str - Tracker identifier as provided by API
    * @returns {string} - Sanitized tracker identifier (fallbacks to 'unknown')
@@ -282,7 +306,7 @@
     const safeUrl = (r.url || '#').replace(/^javascript:/i, '');
     const hasMagnet = typeof r.magnet === 'string' && r.magnet.trim().length > 0;
     const magnetHref = hasMagnet ? r.magnet.replace(/^javascript:/i, '') : '#';
-    const safeMagnetHref = escapeHtml(magnetHref);
+    const safeMagnetHref = escapeAttribute(magnetHref);
     const magnetEncoded = hasMagnet ? encodeURIComponent(r.magnet) : '';
     const magnetButtonAttrs = hasMagnet
       ? `data-magnet="${magnetEncoded}"`
