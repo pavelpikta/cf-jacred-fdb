@@ -13,22 +13,32 @@
  *      - Requires the target to allow cross‑origin or same origin (opened tab) + credentials.
  *      - Better for private LAN servers unreachable from Worker.
  *
- * Persisted Config (localStorage key LS_KEY)
- *   { url, username, direct }
- *   NOTE: Passwords are NOT stored. They are kept in session memory only or
- *   retrieved via Credential Management API when available.
+ * Secure Storage Strategy
+ *   - URL and username: Stored in localStorage (non-sensitive data)
+ *   - Password: Stored securely using Web Crypto API encryption in sessionStorage
+ *     - Passwords are encrypted with AES-GCM using a key derived from origin
+ *     - Falls back to session memory if Web Crypto API is unavailable
+ *     - NEVER stored in localStorage (security risk)
+ *     - sessionStorage is cleared when browser tab closes (better security than localStorage)
+ *   - Configuration key: LS_KEY = 'torrserver_conf_v1'
  *
  * Exposed Global API
  *   TorrServer.openSettings()   : open modal for updating configuration
  *   TorrServer.sendMagnet(magn) : programmatically add magnet respecting current mode
- *   TorrServer.getConf()        : return current config object
+ *   TorrServer.getConf()        : return current config object (without password)
+ *   TorrServer.getConfWithPassword() : return config with password from secure storage
+ *   TorrServer.clearPassword(url, username)  : clear password from secure storage
  *
- * Security Notes
- *   - Passwords are NEVER stored in localStorage (security risk).
- *   - Passwords are kept in session memory only (cleared on page reload).
- *   - Credential Management API is used when available for secure credential storage.
- *   - Users are prompted for password when needed if not in session memory.
- *   - Basic Auth header built only when username provided.
+ * Security Implementation
+ *   - Passwords are encrypted using Web Crypto API (AES-GCM with PBKDF2 key derivation)
+ *     before storing in sessionStorage, providing secure client-side encryption
+ *   - Encryption key is derived from the current origin using PBKDF2 with 100,000 iterations
+ *   - Encrypted passwords are stored in sessionStorage (cleared when tab closes)
+ *   - If Web Crypto API is unavailable, passwords fall back to plain session memory
+ *   - Session memory passwords are cleared on page reload for security
+ *   - Basic Auth header is built only when both username and password are provided
+ *   - All URL inputs are validated to ensure proper format (http:// or https://)
+ *   - Each password is stored with a unique key based on URL + username combination
  */
 (function (global) {
   const LS_KEY = 'torrserver_conf_v1';
@@ -59,62 +69,312 @@
   }
 
   /**
+   * Generate a unique storage key for encrypted password based on URL and username.
+   * This ensures credentials are stored per TorrServer instance.
+   *
+   * @param {string} url - TorrServer URL
+   * @param {string} username - Username (optional)
+   * @returns {string} Unique storage key for the encrypted password
+   */
+  function getPasswordStorageKey(url, username) {
+    const normalizedUrl = (url || '').trim().toLowerCase().replace(/\/$/, '');
+    const normalizedUser = (username || '').trim().toLowerCase();
+    return `torrserver_pwd_${normalizedUrl}_${normalizedUser}`;
+  }
+
+  /**
+   * Check if Web Crypto API is available for encryption.
+   *
+   * @returns {boolean} True if Web Crypto API is supported
+   */
+  function isWebCryptoAvailable() {
+    return (
+      typeof crypto !== 'undefined' &&
+      crypto.subtle &&
+      typeof crypto.subtle.encrypt === 'function' &&
+      typeof crypto.subtle.decrypt === 'function'
+    );
+  }
+
+  /**
+   * Derive an encryption key from the current origin and a constant salt.
+   * This provides basic encryption for password storage in sessionStorage.
+   * Note: This is not as secure as server-side encryption but better than plain text.
+   *
+   * @returns {Promise<CryptoKey>} Encryption key for AES-GCM
+   */
+  async function deriveEncryptionKey() {
+    if (!isWebCryptoAvailable()) {
+      throw new Error('Web Crypto API not available');
+    }
+
+    // Use a constant salt based on origin for key derivation
+    // In a production environment, consider using a more sophisticated key management
+    const salt = new TextEncoder().encode(window.location.origin + 'torrserver_salt_v1');
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(window.location.origin),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits', 'deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  /**
+   * Encrypt password using Web Crypto API.
+   *
+   * @param {string} password - Password to encrypt
+   * @returns {Promise<string|null>} Base64-encoded encrypted password with IV, or null if encryption failed/unavailable
+   */
+  async function encryptPassword(password) {
+    if (!password) return null;
+    if (!isWebCryptoAvailable()) {
+      // Web Crypto API not available - return null to indicate encryption not possible
+      return null;
+    }
+
+    try {
+      const key = await deriveEncryptionKey();
+      const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
+      const encodedPassword = new TextEncoder().encode(password);
+
+      const encrypted = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+        },
+        key,
+        encodedPassword
+      );
+
+      // Combine IV and encrypted data, then encode as base64
+      const combined = new Uint8Array(iv.length + encrypted.byteLength);
+      combined.set(iv, 0);
+      combined.set(new Uint8Array(encrypted), iv.length);
+
+      return btoa(String.fromCharCode(...combined));
+    } catch (e) {
+      console.warn('Password encryption failed:', e);
+      return null; // Return null to indicate encryption failed
+    }
+  }
+
+  /**
+   * Decrypt password using Web Crypto API.
+   *
+   * @param {string} encryptedPassword - Base64-encoded encrypted password with IV
+   * @returns {Promise<string>} Decrypted password
+   */
+  async function decryptPassword(encryptedPassword) {
+    if (!encryptedPassword) return '';
+    if (!isWebCryptoAvailable()) {
+      // Fallback: return as-is (plain text from session memory)
+      return encryptedPassword;
+    }
+
+    try {
+      const key = await deriveEncryptionKey();
+      const combined = Uint8Array.from(atob(encryptedPassword), (c) => c.charCodeAt(0));
+
+      const iv = combined.slice(0, 12);
+      const encrypted = combined.slice(12);
+
+      const decrypted = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+        },
+        key,
+        encrypted
+      );
+
+      return new TextDecoder().decode(decrypted);
+    } catch (e) {
+      console.warn('Password decryption failed:', e);
+      return ''; // Return empty on failure
+    }
+  }
+
+  /**
    * Load non-sensitive configuration from localStorage.
-   * Password is NOT loaded from storage - use getPassword() to retrieve it.
+   * Password is NOT loaded from storage - use getPassword() to retrieve it securely.
+   *
+   * @returns {Object} Configuration object with url, username, direct (password always empty)
    */
   function loadConf() {
     const raw = lsGet(LS_KEY);
     if (!raw) return { url: '', username: '', password: '', direct: false };
     try {
       const j = JSON.parse(raw);
-      // Only load non-sensitive data - password is never stored
+      // Only load non-sensitive data - password is never stored in localStorage
       return {
         url: j.url || '',
         username: j.username || '',
-        password: '', // Always empty - password must be retrieved separately
+        password: '', // Always empty - password must be retrieved separately via getPassword()
         direct: !!j.direct,
       };
     } catch (e) {
+      console.warn('Failed to parse configuration:', e);
       return { url: '', username: '', password: '', direct: false };
     }
   }
 
   /**
    * Save only non-sensitive configuration to localStorage.
-   * Password is NOT saved - use setPassword() to store in session memory.
+   * Password is NOT saved here - use setPassword() to store securely.
+   *
+   * @param {Object} c - Configuration object with url, username, direct
    */
   function saveConf(c) {
-    // Only save non-sensitive data
+    // Only save non-sensitive data to localStorage
     const confToSave = {
-      url: c.url || '',
-      username: c.username || '',
-      // password is explicitly NOT saved
+      url: (c.url || '').trim(),
+      username: (c.username || '').trim(),
+      // password is explicitly NOT saved to localStorage
       direct: !!c.direct,
     };
     lsSet(LS_KEY, JSON.stringify(confToSave));
   }
 
   /**
-   * Get password from session memory.
-   * Returns empty string if not available.
-   * Note: Passwords are never persisted - they must be entered each session.
+   * Get encrypted password from sessionStorage.
+   * SessionStorage is cleared when the browser tab is closed, providing better security than localStorage.
+   *
+   * @param {string} key - Storage key for the encrypted password
+   * @returns {string|null} Encrypted password string or null if not found
    */
-  async function getPassword(url, username) {
-    // Return password from session memory only
-    return sessionPassword || '';
+  function getEncryptedPasswordFromStorage(key) {
+    try {
+      return sessionStorage.getItem(key);
+    } catch (e) {
+      console.warn('sessionStorage read failed:', e);
+      return null;
+    }
   }
 
   /**
-   * Store password in session memory only (not persisted).
-   * Passwords are cleared on page reload for security.
+   * Store encrypted password in sessionStorage.
+   * SessionStorage is cleared when the browser tab is closed, providing better security than localStorage.
+   *
+   * @param {string} key - Storage key for the encrypted password
+   * @param {string} encryptedPassword - Encrypted password string
+   */
+  function setEncryptedPasswordInStorage(key, encryptedPassword) {
+    try {
+      if (encryptedPassword) {
+        sessionStorage.setItem(key, encryptedPassword);
+      } else {
+        sessionStorage.removeItem(key);
+      }
+    } catch (e) {
+      console.warn('sessionStorage write failed:', e);
+    }
+  }
+
+  /**
+   * Retrieve password from secure storage (encrypted sessionStorage or session memory).
+   * Uses Web Crypto API to decrypt passwords stored in sessionStorage when available.
+   * Falls back to session memory if encryption is unavailable.
+   *
+   * @param {string} url - TorrServer URL
+   * @param {string} username - Username (optional)
+   * @returns {Promise<string>} Password string (empty if not found)
+   */
+  async function getPassword(url, username) {
+    // First check session memory (fastest, no decryption needed)
+    if (sessionPassword) {
+      return sessionPassword;
+    }
+
+    // If no URL or username, return empty
+    if (!url || !username) {
+      return '';
+    }
+
+    // Try to retrieve encrypted password from sessionStorage
+    const storageKey = getPasswordStorageKey(url, username);
+    const encryptedPassword = getEncryptedPasswordFromStorage(storageKey);
+
+    if (encryptedPassword) {
+      try {
+        // Decrypt the password
+        const decryptedPassword = await decryptPassword(encryptedPassword);
+        if (decryptedPassword) {
+          // Cache in session memory for faster access
+          sessionPassword = decryptedPassword;
+          return decryptedPassword;
+        }
+      } catch (e) {
+        console.warn('Failed to decrypt password from storage:', e);
+        // Remove corrupted encrypted password
+        setEncryptedPasswordInStorage(storageKey, '');
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * Store password securely using encrypted sessionStorage or session memory.
+   * Uses Web Crypto API to encrypt passwords before storing in sessionStorage when available.
+   * Falls back to session memory if encryption is unavailable.
+   * SessionStorage is cleared when the browser tab is closed, providing better security than localStorage.
+   *
+   * @param {string} url - TorrServer URL
+   * @param {string} username - Username (optional)
+   * @param {string} password - Password to store
+   * @returns {Promise<void>}
    */
   async function setPassword(url, username, password) {
+    // Always store in session memory for fast access
     sessionPassword = password || '';
+
+    // If no URL, username, or password, clear storage and return
+    if (!url || !username || !password) {
+      if (url && username) {
+        const storageKey = getPasswordStorageKey(url, username);
+        setEncryptedPasswordInStorage(storageKey, '');
+      }
+      return;
+    }
+
+    // Try to encrypt and store in sessionStorage
+    try {
+      const encryptedPassword = await encryptPassword(password);
+      if (encryptedPassword) {
+        // Encryption succeeded - store encrypted password in sessionStorage
+        const storageKey = getPasswordStorageKey(url, username);
+        setEncryptedPasswordInStorage(storageKey, encryptedPassword);
+      } else {
+        // Encryption failed or not available - password remains in session memory only
+        const storageKey = getPasswordStorageKey(url, username);
+        setEncryptedPasswordInStorage(storageKey, '');
+      }
+    } catch (e) {
+      console.warn('Failed to encrypt and store password:', e);
+      // Password remains in session memory only
+      const storageKey = getPasswordStorageKey(url, username);
+      setEncryptedPasswordInStorage(storageKey, '');
+    }
   }
 
   /**
    * Migrate old configuration: remove any password data from localStorage.
-   * This ensures old encrypted/hashed passwords are cleaned up.
+   * This ensures old encrypted/hashed passwords are cleaned up from localStorage.
+   * Encrypted passwords in sessionStorage are automatically cleared when the tab closes.
    */
   function migrateOldConfig() {
     const raw = lsGet(LS_KEY);
@@ -132,34 +392,69 @@
       }
     } catch (e) {
       // If migration fails, remove the entire config to start fresh
+      console.warn('Configuration migration failed:', e);
       lsRemove(LS_KEY);
     }
   }
 
-  // Run migration on load to clean up any old password data
+  // Run migration on load to clean up any old password data from localStorage
   migrateOldConfig();
 
   /**
-   * Clear password from session memory.
+   * Clear password from both session memory and encrypted sessionStorage.
+   * This ensures passwords are completely removed from all storage locations.
+   *
+   * @param {string} url - TorrServer URL (optional, if provided clears specific credential)
+   * @param {string} username - Username (optional, if provided clears specific credential)
    */
-  function clearPassword() {
+  function clearPassword(url, username) {
+    // Clear session memory
     sessionPassword = '';
+
+    // Clear encrypted password from sessionStorage if URL and username provided
+    if (url && username) {
+      const storageKey = getPasswordStorageKey(url, username);
+      setEncryptedPasswordInStorage(storageKey, '');
+    } else {
+      // Clear all torrserver passwords from sessionStorage
+      try {
+        const keys = Object.keys(sessionStorage);
+        keys.forEach((key) => {
+          if (key.startsWith('torrserver_pwd_')) {
+            sessionStorage.removeItem(key);
+          }
+        });
+      } catch (e) {
+        console.warn('Failed to clear passwords from sessionStorage:', e);
+      }
+    }
   }
 
   let pendingPromiseResolve = null;
-  /** Inject modal markup if not already present (allows custom styling override). */
+
+  /**
+   * Inject modal markup if not already present (allows custom styling override).
+   * Creates the settings modal UI for configuring TorrServer connection.
+   */
   function ensureMarkup() {
     if ($('#torrServerModal').length) return;
     const html =
       '<div id="torrServerModal" class="modal" style="display:none">\n  <div class="modal-dialog">\n    <div class="modal-header">Настройки TorrServer</div>\n    <div class="modal-body">\n      <input type="text" id="tsUrl" placeholder="URL (например http://127.0.0.1:8090)" class="mb10" />\n      <input type="text" id="tsUser" placeholder="Имя пользователя (опционально)" class="mb10" />\n      <input type="password" id="tsPass" placeholder="Пароль (опционально)" class="mb10" />\n      <label class="ts-checkbox"><input type="checkbox" id="tsDirect" /> <span>Прямой режим (из браузера)</span></label>\n      <div class="ts-actions-row">\n        <button type="button" id="tsTest" class="btn-tertiary ts-test-btn">Тест соединения</button>\n      </div>\n      <div class="ts-hint">Добавление торрентов всегда через /torrents. Прямой режим требует CORS допуска или авторизованной вкладки.</div>\n      <div class="modal-error" id="tsErr" style="display:none"></div>\n    </div>\n    <div class="modal-footer">\n      <button type="button" id="tsCancel" class="btn-secondary">Отмена</button>\n      <button type="button" id="tsSave" class="btn-primary">Сохранить</button>\n    </div>\n  </div>\n</div>';
     $('body').append(html);
   }
+
+  /**
+   * Show the settings modal and populate it with current configuration.
+   * Retrieves password from secure storage (encrypted sessionStorage or session memory).
+   *
+   * @returns {Promise<boolean>} Promise that resolves to true if settings were saved, false if cancelled
+   */
   async function showModal() {
     ensureMarkup();
     const c = loadConf();
     $('#tsUrl').val(c.url);
     $('#tsUser').val(c.username);
-    // Try to get password from session memory or Credential Management API
+    // Retrieve password from secure storage (encrypted sessionStorage or session memory)
     const pwd = await getPassword(c.url, c.username);
     $('#tsPass').val(pwd);
     $('#tsDirect').prop('checked', !!c.direct);
@@ -169,6 +464,12 @@
       pendingPromiseResolve = res;
     });
   }
+
+  /**
+   * Close the settings modal and resolve the pending promise.
+   *
+   * @param {boolean} res - Result to pass to the promise (true if saved, false if cancelled)
+   */
   function closeModal(res) {
     $('#torrServerModal').hide();
     if (pendingPromiseResolve) {
@@ -177,6 +478,12 @@
       r(res);
     }
   }
+
+  /**
+   * Submit the settings modal form.
+   * Validates URL format, saves non-sensitive data to localStorage,
+   * and stores password securely using encrypted sessionStorage.
+   */
   async function submitModal() {
     const url = $('#tsUrl').val().trim();
     const username = $('#tsUser').val().trim();
@@ -187,7 +494,7 @@
       $('#tsUrl').attr('aria-invalid', 'true').focus();
       return;
     }
-    // Validate URL format
+    // Validate URL format - only allow http:// or https://
     try {
       const urlObj = new URL(url);
       if (!['http:', 'https:'].includes(urlObj.protocol)) {
@@ -201,9 +508,9 @@
       return;
     }
     $('#tsUrl').attr('aria-invalid', 'false');
-    // Save only non-sensitive data to localStorage
+    // Save only non-sensitive data (url, username, direct) to localStorage
     saveConf({ url, username, direct });
-    // Store password in session memory (not persisted)
+    // Store password securely using encrypted sessionStorage (or session memory as fallback)
     await setPassword(url, username, password);
     closeModal(true);
   }
@@ -216,13 +523,23 @@
     }
   });
 
-  // Toast
+  /**
+   * Ensure toast notification container exists in the DOM.
+   * Creates a fixed-position container for displaying toast messages.
+   */
   function ensureToast() {
     if ($('#toastBox').length) return;
     $('body').append(
       '<div id="toastBox" style="position:fixed;bottom:20px;right:20px;z-index:1100;display:flex;flex-direction:column;gap:8px;"></div>'
     );
   }
+
+  /**
+   * Display a toast notification message.
+   *
+   * @param {string} msg - Message to display
+   * @param {string} type - Type of toast ('err' for error, 'ok' for success)
+   */
   function toast(msg, type) {
     ensureToast();
     const id = 't' + Date.now();
@@ -245,12 +562,19 @@
     }, 4000);
   }
 
-  /** Send magnet directly to user-specified TorrServer (browser -> server). */
+  /**
+   * Send magnet link directly to user-specified TorrServer (browser -> server).
+   * Uses direct mode, bypassing the Cloudflare worker proxy.
+   * Retrieves password from secure storage (encrypted sessionStorage or session memory).
+   *
+   * @param {string} magnet - Magnet link to send
+   * @param {Object} conf - Configuration object with url, username
+   */
   async function directSend(magnet, conf) {
     const debug = !!localStorage.getItem('torrserver_debug');
     const base = conf.url.replace(/\/$/, '');
     const addUrl = base + '/torrents';
-    // Get password from session memory
+    // Retrieve password from secure storage (encrypted sessionStorage or session memory)
     const password = await getPassword(conf.url, conf.username);
     const auth =
       conf.username && password
@@ -305,14 +629,20 @@
       });
   }
 
-  /** Entry point for UI buttons: chooses proxy vs direct mode. */
+  /**
+   * Entry point for UI buttons: sends magnet link to TorrServer.
+   * Chooses between proxy mode (default) and direct mode based on configuration.
+   * Retrieves password from secure storage (encrypted sessionStorage or session memory).
+   *
+   * @param {string} magnet - Magnet link to send
+   */
   async function sendMagnet(magnet) {
     const conf = loadConf();
     if (!conf.url) {
       openSettings();
       return;
     }
-    // Get password from session memory
+    // Retrieve password from secure storage (encrypted sessionStorage or session memory)
     const password = await getPassword(conf.url, conf.username);
     if (conf.direct) {
       await directSend(magnet, { ...conf, password });
@@ -352,6 +682,10 @@
       .catch(() => toast('Ошибка сети', 'err'));
   }
 
+  /**
+   * Open the settings modal for configuring TorrServer connection.
+   * Shows a toast notification when settings are successfully saved.
+   */
   function openSettings() {
     showModal().then((changed) => {
       if (changed) {
@@ -360,7 +694,11 @@
     });
   }
 
-  // Тест соединения
+  /**
+   * Test connection to TorrServer endpoint.
+   * Validates the connection by sending a test request through the proxy.
+   * Uses password from the form input (not from secure storage) for testing.
+   */
   $(document).on('click', '#tsTest', async function () {
     const url = $('#tsUrl').val().trim();
     if (!url) {
@@ -369,7 +707,7 @@
     }
     $('#tsErr').hide().text('');
     const username = $('#tsUser').val().trim();
-    const password = $('#tsPass').val();
+    const password = $('#tsPass').val(); // Use password from form input for testing
     const debug = !!localStorage.getItem('torrserver_debug');
     const btn = $('#tsTest');
     btn.prop('disabled', true).text('Тест...');
@@ -402,12 +740,15 @@
   });
 
   /**
-   * Get full configuration including password from session memory.
+   * Get full configuration including password from secure storage.
    * This is a convenience method that combines loadConf() with getPassword().
+   * Retrieves password from encrypted sessionStorage or session memory.
+   *
+   * @returns {Promise<Object>} Configuration object with url, username, password, direct
    */
   async function getConfWithPassword() {
     const conf = loadConf();
-    if (conf.username) {
+    if (conf.username && conf.url) {
       const password = await getPassword(conf.url, conf.username);
       return { ...conf, password };
     }
