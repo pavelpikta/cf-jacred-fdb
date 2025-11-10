@@ -28,10 +28,15 @@
  */
 (function (global) {
   const LS_KEY = 'torrserver_conf_v1';
-  // Use CDN-loaded CryptoJS or require if available.
-  // If using modules: import CryptoJS from 'crypto-js';
+  // CryptoJS is loaded via CDN in index.html - fail fast if not available
   // eslint-disable-next-line no-undef
-  const CryptoJS = window.CryptoJS || (typeof require === 'function' ? require('crypto-js') : null);
+  if (typeof window.CryptoJS === 'undefined') {
+    throw new Error(
+      'CryptoJS is required but not loaded. Ensure the CryptoJS CDN script is included before torrserver.js'
+    );
+  }
+  // eslint-disable-next-line no-undef
+  const CryptoJS = window.CryptoJS;
   function lsGet(k) {
     try {
       return localStorage.getItem(k);
@@ -53,7 +58,7 @@
     try {
       const j = JSON.parse(raw);
       let decryptedPwd = '';
-      if (j.password && j.username && CryptoJS) {
+      if (j.password && j.username) {
         try {
           const bytes = CryptoJS.AES.decrypt(j.password, j.username);
           decryptedPwd = bytes.toString(CryptoJS.enc.Utf8);
@@ -75,7 +80,7 @@
   }
   function saveConf(c) {
     const confToSave = Object.assign({}, c);
-    if (confToSave.password && confToSave.username && CryptoJS) {
+    if (confToSave.password && confToSave.username) {
       // Secure password hashing using PBKDF2
       const iterations = 100000; // Increase iterations for security
       const keySize = 64 / 4; // 64 bytes, in words: 16 words (1 word = 4 bytes)
