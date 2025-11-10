@@ -127,8 +127,8 @@
    * @returns {string} Unique storage key for the encrypted password
    */
   function getPasswordStorageKey(url, username) {
-    const normalizedUrl = (url || '').trim().toLowerCase().replace(/\/$/, '');
-    const normalizedUser = (username || '').trim().toLowerCase();
+    const normalizedUrl = (url || '').trim().replace(/\/$/, '');
+    const normalizedUser = (username || '').trim();
     return `${PWD_STORAGE_PREFIX}${normalizedUrl}_${normalizedUser}`;
   }
 
