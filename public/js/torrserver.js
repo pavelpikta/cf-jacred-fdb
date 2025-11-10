@@ -44,6 +44,21 @@
  */
 (function (global) {
   const LS_KEY = 'torrserver_conf_v1';
+  const PWD_STORAGE_PREFIX = 'torrserver_pwd_';
+  const REQUEST_TIMEOUT_MS = 15000;
+  const TOAST_DISPLAY_MS = 4000;
+  const IV_LENGTH = 12; // 96-bit IV for AES-GCM
+  const PBKDF2_ITERATIONS = 100000;
+
+  // Default configuration object
+  const DEFAULT_CONFIG = {
+    url: '',
+    username: '',
+    password: '',
+    direct: false,
+    persistPassword: false,
+  };
+
   // Session-only password storage (not persisted)
   let sessionPassword = '';
 
@@ -71,6 +86,16 @@
   }
 
   /**
+   * Get the appropriate storage (localStorage or sessionStorage) based on persistPassword preference.
+   *
+   * @param {boolean} persistPassword - If true, return localStorage; if false, return sessionStorage
+   * @returns {Storage} The appropriate storage object
+   */
+  function getStorage(persistPassword) {
+    return persistPassword ? localStorage : sessionStorage;
+  }
+
+  /**
    * Generate a unique storage key for encrypted password based on URL and username.
    * This ensures credentials are stored per TorrServer instance.
    *
@@ -81,7 +106,7 @@
   function getPasswordStorageKey(url, username) {
     const normalizedUrl = (url || '').trim().toLowerCase().replace(/\/$/, '');
     const normalizedUser = (username || '').trim().toLowerCase();
-    return `torrserver_pwd_${normalizedUrl}_${normalizedUser}`;
+    return `${PWD_STORAGE_PREFIX}${normalizedUrl}_${normalizedUser}`;
   }
 
   /**
@@ -125,7 +150,7 @@
       {
         name: 'PBKDF2',
         salt: salt,
-        iterations: 100000,
+        iterations: PBKDF2_ITERATIONS,
         hash: 'SHA-256',
       },
       keyMaterial,
@@ -150,7 +175,7 @@
 
     try {
       const key = await deriveEncryptionKey();
-      const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
+      const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
       const encodedPassword = new TextEncoder().encode(password);
 
       const encrypted = await crypto.subtle.encrypt(
@@ -191,8 +216,8 @@
       const key = await deriveEncryptionKey();
       const combined = Uint8Array.from(atob(encryptedPassword), (c) => c.charCodeAt(0));
 
-      const iv = combined.slice(0, 12);
-      const encrypted = combined.slice(12);
+      const iv = combined.slice(0, IV_LENGTH);
+      const encrypted = combined.slice(IV_LENGTH);
 
       const decrypted = await crypto.subtle.decrypt(
         {
@@ -218,7 +243,7 @@
    */
   function loadConf() {
     const raw = lsGet(LS_KEY);
-    if (!raw) return { url: '', username: '', password: '', direct: false, persistPassword: false };
+    if (!raw) return { ...DEFAULT_CONFIG };
     try {
       const j = JSON.parse(raw);
       // Only load non-sensitive data - password is never stored in localStorage (unless encrypted with persistPassword)
@@ -231,7 +256,7 @@
       };
     } catch (e) {
       console.warn('Failed to parse configuration:', e);
-      return { url: '', username: '', password: '', direct: false, persistPassword: false };
+      return { ...DEFAULT_CONFIG };
     }
   }
 
@@ -264,12 +289,12 @@
   function getEncryptedPasswordFromStorage(key, persistPassword) {
     try {
       // Check the preferred storage first
-      const preferredStorage = persistPassword ? localStorage : sessionStorage;
+      const preferredStorage = getStorage(persistPassword);
       const value = preferredStorage.getItem(key);
       if (value) return value;
 
       // If not found in preferred storage, check the other one (for migration)
-      const fallbackStorage = persistPassword ? sessionStorage : localStorage;
+      const fallbackStorage = getStorage(!persistPassword);
       const fallbackValue = fallbackStorage.getItem(key);
       if (fallbackValue) {
         // Migrate to preferred storage
@@ -295,8 +320,8 @@
    */
   function setEncryptedPasswordInStorage(key, encryptedPassword, persistPassword) {
     try {
-      const preferredStorage = persistPassword ? localStorage : sessionStorage;
-      const otherStorage = persistPassword ? sessionStorage : localStorage;
+      const preferredStorage = getStorage(persistPassword);
+      const otherStorage = getStorage(!persistPassword);
 
       if (encryptedPassword) {
         preferredStorage.setItem(key, encryptedPassword);
@@ -371,31 +396,26 @@
     // Always store in session memory for fast access
     sessionPassword = password || '';
 
-    // If no URL, username, or password, clear storage and return
-    if (!url || !username || !password) {
-      if (url && username) {
-        const storageKey = getPasswordStorageKey(url, username);
-        setEncryptedPasswordInStorage(storageKey, '', persistPassword);
-      }
+    // If no URL or username, we can't create a storage key
+    if (!url || !username) {
+      return;
+    }
+
+    const storageKey = getPasswordStorageKey(url, username);
+
+    // If no password, clear storage and return
+    if (!password) {
+      setEncryptedPasswordInStorage(storageKey, '', persistPassword);
       return;
     }
 
     // Try to encrypt and store
     try {
       const encryptedPassword = await encryptPassword(password);
-      if (encryptedPassword) {
-        // Encryption succeeded - store encrypted password
-        const storageKey = getPasswordStorageKey(url, username);
-        setEncryptedPasswordInStorage(storageKey, encryptedPassword, persistPassword);
-      } else {
-        // Encryption failed or not available - password remains in session memory only
-        const storageKey = getPasswordStorageKey(url, username);
-        setEncryptedPasswordInStorage(storageKey, '', persistPassword);
-      }
+      setEncryptedPasswordInStorage(storageKey, encryptedPassword || '', persistPassword);
     } catch (e) {
       console.warn('Failed to encrypt and store password:', e);
       // Password remains in session memory only
-      const storageKey = getPasswordStorageKey(url, username);
       setEncryptedPasswordInStorage(storageKey, '', persistPassword);
     }
   }
@@ -439,6 +459,24 @@
   migrateOldConfig();
 
   /**
+   * Clear all torrserver passwords from a storage object.
+   *
+   * @param {Storage} storage - Storage object to clear from
+   */
+  function clearAllPasswordsFromStorage(storage) {
+    try {
+      const keys = Object.keys(storage);
+      keys.forEach((key) => {
+        if (key.startsWith(PWD_STORAGE_PREFIX)) {
+          storage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to clear passwords from storage:', e);
+    }
+  }
+
+  /**
    * Clear password from both session memory and encrypted storage (sessionStorage and localStorage).
    * This ensures passwords are completely removed from all storage locations.
    *
@@ -461,22 +499,8 @@
       }
     } else {
       // Clear all torrserver passwords from both storages
-      try {
-        const sessionKeys = Object.keys(sessionStorage);
-        sessionKeys.forEach((key) => {
-          if (key.startsWith('torrserver_pwd_')) {
-            sessionStorage.removeItem(key);
-          }
-        });
-        const localKeys = Object.keys(localStorage);
-        localKeys.forEach((key) => {
-          if (key.startsWith('torrserver_pwd_')) {
-            localStorage.removeItem(key);
-          }
-        });
-      } catch (e) {
-        console.warn('Failed to clear passwords from storage:', e);
-      }
+      clearAllPasswordsFromStorage(sessionStorage);
+      clearAllPasswordsFromStorage(localStorage);
     }
   }
 
@@ -531,9 +555,30 @@
   }
 
   /**
+   * Validate URL format - only allow http:// or https://
+   *
+   * @param {string} url - URL to validate
+   * @returns {string|null} Error message if invalid, null if valid
+   */
+  function validateUrl(url) {
+    if (!url) {
+      return 'Укажите URL';
+    }
+    try {
+      const urlObj = new URL(url);
+      if (!['http:', 'https:'].includes(urlObj.protocol)) {
+        return 'Используйте http:// или https://';
+      }
+      return null;
+    } catch (e) {
+      return 'Неверный формат URL';
+    }
+  }
+
+  /**
    * Submit the settings modal form.
    * Validates URL format, saves non-sensitive data to localStorage,
-   * and stores password securely using encrypted sessionStorage.
+   * and stores password securely using encrypted storage.
    */
   async function submitModal() {
     const url = $('#tsUrl').val().trim();
@@ -541,24 +586,14 @@
     const password = $('#tsPass').val();
     const direct = $('#tsDirect').is(':checked');
     const persistPassword = $('#tsPersistPassword').is(':checked');
-    if (!url) {
-      $('#tsErr').text('Укажите URL').show();
+
+    const urlError = validateUrl(url);
+    if (urlError) {
+      $('#tsErr').text(urlError).show();
       $('#tsUrl').attr('aria-invalid', 'true').focus();
       return;
     }
-    // Validate URL format - only allow http:// or https://
-    try {
-      const urlObj = new URL(url);
-      if (!['http:', 'https:'].includes(urlObj.protocol)) {
-        $('#tsErr').text('Используйте http:// или https://').show();
-        $('#tsUrl').attr('aria-invalid', 'true').focus();
-        return;
-      }
-    } catch (e) {
-      $('#tsErr').text('Неверный формат URL').show();
-      $('#tsUrl').attr('aria-invalid', 'true').focus();
-      return;
-    }
+
     $('#tsUrl').attr('aria-invalid', 'false');
     // Save only non-sensitive data (url, username, direct, persistPassword) to localStorage
     saveConf({ url, username, direct, persistPassword });
@@ -611,7 +646,7 @@
     $('#toastBox').append(el);
     setTimeout(() => {
       el.fadeOut(400, () => el.remove());
-    }, 4000);
+    }, TOAST_DISPLAY_MS);
   }
 
   /**
@@ -636,7 +671,7 @@
     const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
     if (auth) headers['Authorization'] = auth;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     fetch(addUrl, {
       method: 'POST',
@@ -753,8 +788,9 @@
    */
   $(document).on('click', '#tsTest', async function () {
     const url = $('#tsUrl').val().trim();
-    if (!url) {
-      $('#tsErr').text('Укажите URL').show();
+    const urlError = validateUrl(url);
+    if (urlError) {
+      $('#tsErr').text(urlError).show();
       return;
     }
     $('#tsErr').hide().text('');
