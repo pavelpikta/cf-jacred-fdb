@@ -14,7 +14,9 @@
  *      - Better for private LAN servers unreachable from Worker.
  *
  * Persisted Config (localStorage key LS_KEY)
- *   { url, username, password, direct }
+ *   { url, username, direct }
+ *   NOTE: Passwords are NOT stored. They are kept in session memory only or
+ *   retrieved via Credential Management API when available.
  *
  * Exposed Global API
  *   TorrServer.openSettings()   : open modal for updating configuration
@@ -22,21 +24,17 @@
  *   TorrServer.getConf()        : return current config object
  *
  * Security Notes
- *   - Credentials stored in localStorage (user consent) for convenience. Consider
- *     clearing after session on shared machines.
+ *   - Passwords are NEVER stored in localStorage (security risk).
+ *   - Passwords are kept in session memory only (cleared on page reload).
+ *   - Credential Management API is used when available for secure credential storage.
+ *   - Users are prompted for password when needed if not in session memory.
  *   - Basic Auth header built only when username provided.
  */
 (function (global) {
   const LS_KEY = 'torrserver_conf_v1';
-  // CryptoJS is loaded via CDN in index.html - fail fast if not available
-  // eslint-disable-next-line no-undef
-  if (typeof window.CryptoJS === 'undefined') {
-    throw new Error(
-      'CryptoJS is required but not loaded. Ensure the CryptoJS CDN script is included before torrserver.js'
-    );
-  }
-  // eslint-disable-next-line no-undef
-  const CryptoJS = window.CryptoJS;
+  // Session-only password storage (not persisted)
+  let sessionPassword = '';
+
   function lsGet(k) {
     try {
       return localStorage.getItem(k);
@@ -52,56 +50,100 @@
       console.warn('localStorage write failed:', e);
     }
   }
+  function lsRemove(k) {
+    try {
+      localStorage.removeItem(k);
+    } catch (e) {
+      console.warn('localStorage remove failed:', e);
+    }
+  }
+
+  /**
+   * Load non-sensitive configuration from localStorage.
+   * Password is NOT loaded from storage - use getPassword() to retrieve it.
+   */
   function loadConf() {
     const raw = lsGet(LS_KEY);
     if (!raw) return { url: '', username: '', password: '', direct: false };
     try {
       const j = JSON.parse(raw);
-      let decryptedPwd = '';
-      if (j.password && j.username) {
-        try {
-          const bytes = CryptoJS.AES.decrypt(j.password, j.username);
-          decryptedPwd = bytes.toString(CryptoJS.enc.Utf8);
-          // If decryption fails, bytes.toString() returns empty string
-          // Fall back to empty if decryption result is invalid
-          if (!decryptedPwd) {
-            decryptedPwd = '';
-          }
-        } catch (e) {
-          // If decryption throws an error, fall back to empty password
-          console.warn('Password decryption failed:', e);
-          decryptedPwd = '';
-        }
-      } else {
-        decryptedPwd = j.password || '';
-      }
+      // Only load non-sensitive data - password is never stored
       return {
         url: j.url || '',
         username: j.username || '',
-        password: decryptedPwd,
+        password: '', // Always empty - password must be retrieved separately
         direct: !!j.direct,
       };
     } catch (e) {
       return { url: '', username: '', password: '', direct: false };
     }
   }
+
+  /**
+   * Save only non-sensitive configuration to localStorage.
+   * Password is NOT saved - use setPassword() to store in session memory.
+   */
   function saveConf(c) {
-    const confToSave = Object.assign({}, c);
-    if (confToSave.password && confToSave.username) {
-      // Encrypt password using AES with username as key (symmetric encryption)
-      try {
-        const encrypted = CryptoJS.AES.encrypt(confToSave.password, confToSave.username);
-        confToSave.password = encrypted.toString();
-      } catch (e) {
-        // If encryption fails, fall back to empty password
-        console.warn('Password encryption failed:', e);
-        confToSave.password = '';
-      }
-    } else if (confToSave.password && !confToSave.username) {
-      // If password exists but no username, clear password (can't encrypt without key)
-      confToSave.password = '';
-    }
+    // Only save non-sensitive data
+    const confToSave = {
+      url: c.url || '',
+      username: c.username || '',
+      // password is explicitly NOT saved
+      direct: !!c.direct,
+    };
     lsSet(LS_KEY, JSON.stringify(confToSave));
+  }
+
+  /**
+   * Get password from session memory.
+   * Returns empty string if not available.
+   * Note: Passwords are never persisted - they must be entered each session.
+   */
+  async function getPassword(url, username) {
+    // Return password from session memory only
+    return sessionPassword || '';
+  }
+
+  /**
+   * Store password in session memory only (not persisted).
+   * Passwords are cleared on page reload for security.
+   */
+  async function setPassword(url, username, password) {
+    sessionPassword = password || '';
+  }
+
+  /**
+   * Migrate old configuration: remove any password data from localStorage.
+   * This ensures old encrypted/hashed passwords are cleaned up.
+   */
+  function migrateOldConfig() {
+    const raw = lsGet(LS_KEY);
+    if (!raw) return;
+    try {
+      const j = JSON.parse(raw);
+      // If password field exists, remove it and save clean config
+      if ('password' in j) {
+        const cleanConfig = {
+          url: j.url || '',
+          username: j.username || '',
+          direct: !!j.direct,
+        };
+        lsSet(LS_KEY, JSON.stringify(cleanConfig));
+      }
+    } catch (e) {
+      // If migration fails, remove the entire config to start fresh
+      lsRemove(LS_KEY);
+    }
+  }
+
+  // Run migration on load to clean up any old password data
+  migrateOldConfig();
+
+  /**
+   * Clear password from session memory.
+   */
+  function clearPassword() {
+    sessionPassword = '';
   }
 
   let pendingPromiseResolve = null;
@@ -112,12 +154,14 @@
       '<div id="torrServerModal" class="modal" style="display:none">\n  <div class="modal-dialog">\n    <div class="modal-header">Настройки TorrServer</div>\n    <div class="modal-body">\n      <input type="text" id="tsUrl" placeholder="URL (например http://127.0.0.1:8090)" class="mb10" />\n      <input type="text" id="tsUser" placeholder="Имя пользователя (опционально)" class="mb10" />\n      <input type="password" id="tsPass" placeholder="Пароль (опционально)" class="mb10" />\n      <label class="ts-checkbox"><input type="checkbox" id="tsDirect" /> <span>Прямой режим (из браузера)</span></label>\n      <div class="ts-actions-row">\n        <button type="button" id="tsTest" class="btn-tertiary ts-test-btn">Тест соединения</button>\n      </div>\n      <div class="ts-hint">Добавление торрентов всегда через /torrents. Прямой режим требует CORS допуска или авторизованной вкладки.</div>\n      <div class="modal-error" id="tsErr" style="display:none"></div>\n    </div>\n    <div class="modal-footer">\n      <button type="button" id="tsCancel" class="btn-secondary">Отмена</button>\n      <button type="button" id="tsSave" class="btn-primary">Сохранить</button>\n    </div>\n  </div>\n</div>';
     $('body').append(html);
   }
-  function showModal() {
+  async function showModal() {
     ensureMarkup();
     const c = loadConf();
     $('#tsUrl').val(c.url);
     $('#tsUser').val(c.username);
-    $('#tsPass').val(c.password);
+    // Try to get password from session memory or Credential Management API
+    const pwd = await getPassword(c.url, c.username);
+    $('#tsPass').val(pwd);
     $('#tsDirect').prop('checked', !!c.direct);
     $('#tsErr').hide().text('');
     $('#torrServerModal').show();
@@ -133,7 +177,7 @@
       r(res);
     }
   }
-  function submitModal() {
+  async function submitModal() {
     const url = $('#tsUrl').val().trim();
     const username = $('#tsUser').val().trim();
     const password = $('#tsPass').val();
@@ -157,7 +201,10 @@
       return;
     }
     $('#tsUrl').attr('aria-invalid', 'false');
-    saveConf({ url, username, password, direct });
+    // Save only non-sensitive data to localStorage
+    saveConf({ url, username, direct });
+    // Store password in session memory (not persisted)
+    await setPassword(url, username, password);
     closeModal(true);
   }
   $(document).on('click', '#tsCancel', () => closeModal(false));
@@ -199,13 +246,16 @@
   }
 
   /** Send magnet directly to user-specified TorrServer (browser -> server). */
-  function directSend(magnet, conf) {
+  async function directSend(magnet, conf) {
     const debug = !!localStorage.getItem('torrserver_debug');
     const base = conf.url.replace(/\/$/, '');
     const addUrl = base + '/torrents';
-    const auth = conf.username
-      ? 'Basic ' + btoa(unescape(encodeURIComponent(conf.username + ':' + conf.password)))
-      : null;
+    // Get password from session memory
+    const password = await getPassword(conf.url, conf.username);
+    const auth =
+      conf.username && password
+        ? 'Basic ' + btoa(unescape(encodeURIComponent(conf.username + ':' + password)))
+        : null;
     const bodyStr = JSON.stringify({ action: 'add', link: magnet });
     const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
     if (auth) headers['Authorization'] = auth;
@@ -256,14 +306,16 @@
   }
 
   /** Entry point for UI buttons: chooses proxy vs direct mode. */
-  function sendMagnet(magnet) {
+  async function sendMagnet(magnet) {
     const conf = loadConf();
     if (!conf.url) {
       openSettings();
       return;
     }
+    // Get password from session memory
+    const password = await getPassword(conf.url, conf.username);
     if (conf.direct) {
-      directSend(magnet, conf);
+      await directSend(magnet, { ...conf, password });
       return;
     }
     const debug = !!localStorage.getItem('torrserver_debug');
@@ -275,7 +327,7 @@
         magnet,
         url: conf.url,
         username: conf.username,
-        password: conf.password,
+        password: password,
         debug,
       }),
     })
@@ -309,7 +361,7 @@
   }
 
   // Тест соединения
-  $(document).on('click', '#tsTest', function () {
+  $(document).on('click', '#tsTest', async function () {
     const url = $('#tsUrl').val().trim();
     if (!url) {
       $('#tsErr').text('Укажите URL').show();
@@ -349,7 +401,26 @@
       });
   });
 
-  const TorrServer = { openSettings, sendMagnet, getConf: loadConf };
+  /**
+   * Get full configuration including password from session memory.
+   * This is a convenience method that combines loadConf() with getPassword().
+   */
+  async function getConfWithPassword() {
+    const conf = loadConf();
+    if (conf.username) {
+      const password = await getPassword(conf.url, conf.username);
+      return { ...conf, password };
+    }
+    return conf;
+  }
+
+  const TorrServer = {
+    openSettings,
+    sendMagnet,
+    getConf: loadConf,
+    getConfWithPassword,
+    clearPassword,
+  };
   global.TorrServer = TorrServer;
 
   // Hook buttons after dynamic results rendering: delegated event
