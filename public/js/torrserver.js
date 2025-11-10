@@ -30,6 +30,7 @@
   const LS_KEY = 'torrserver_conf_v1';
   // Use CDN-loaded CryptoJS or require if available.
   // If using modules: import CryptoJS from 'crypto-js';
+  // eslint-disable-next-line no-undef
   const CryptoJS = window.CryptoJS || (typeof require === 'function' ? require('crypto-js') : null);
   function lsGet(k) {
     try {
@@ -77,10 +78,13 @@
     if (confToSave.password && confToSave.username && CryptoJS) {
       // Secure password hashing using PBKDF2
       const iterations = 100000; // Increase iterations for security
-      const keySize = 64/4; // 64 bytes, in words: 16 words (1 word = 4 bytes)
+      const keySize = 64 / 4; // 64 bytes, in words: 16 words (1 word = 4 bytes)
       // If possible, use a per-user salt; here we use username
       const salt = confToSave.username || 'torrserver_default_salt';
-      confToSave.password = CryptoJS.PBKDF2(confToSave.password, salt, { keySize, iterations }).toString();
+      confToSave.password = CryptoJS.PBKDF2(confToSave.password, salt, {
+        keySize,
+        iterations,
+      }).toString();
     }
     lsSet(LS_KEY, JSON.stringify(confToSave));
   }

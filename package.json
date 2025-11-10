@@ -38,5 +38,5 @@
   },
   "dependencies": {
     "crypto-js": "^4.2.0"
-}
+  }
 }
