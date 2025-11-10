@@ -574,6 +574,10 @@
       $('#tsMasterPwdPrompt').focus();
 
       const cleanup = () => {
+        // Detach all namespaced event handlers to avoid memory leaks
+        $('#tsMasterPwdOk').off('.tsMasterPwd');
+        $('#tsMasterPwdCancel').off('.tsMasterPwd');
+        $('#tsMasterPwdPrompt').off('.tsMasterPwd');
         $('#torrServerMasterPwdModal').remove();
       };
 
@@ -594,13 +598,13 @@
         }
       };
 
-      // Use one-time event handlers to avoid memory leaks
-      $('#tsMasterPwdOk').one('click', verify);
-      $('#tsMasterPwdCancel').one('click', () => {
+      // Use persistent event handlers with namespacing for proper cleanup
+      $('#tsMasterPwdOk').on('click.tsMasterPwd', verify);
+      $('#tsMasterPwdCancel').on('click.tsMasterPwd', () => {
         cleanup();
         resolve(false);
       });
-      $('#tsMasterPwdPrompt').one('keydown', (e) => {
+      $('#tsMasterPwdPrompt').on('keydown.tsMasterPwd', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           verify();
