@@ -121,14 +121,27 @@
   /**
    * Generate a unique storage key for encrypted password based on URL and username.
    * This ensures credentials are stored per TorrServer instance.
+   * Normalizes URL by lowercasing protocol and host to prevent duplicate storage keys.
    *
    * @param {string} url - TorrServer URL
    * @param {string} username - Username (optional)
    * @returns {string} Unique storage key for the encrypted password
    */
   function getPasswordStorageKey(url, username) {
-    const normalizedUrl = (url || '').trim().replace(/\/$/, '');
-    const normalizedUser = (username || '').trim();
+    let normalizedUrl = (url || '').trim();
+    if (normalizedUrl) {
+      try {
+        const urlObj = new URL(normalizedUrl);
+        // Normalize protocol and host to lowercase
+        normalizedUrl = `${urlObj.protocol.toLowerCase()}//${urlObj.host.toLowerCase()}${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+        // Remove trailing slash
+        normalizedUrl = normalizedUrl.replace(/\/$/, '');
+      } catch (e) {
+        // If URL parsing fails, fall back to simple normalization
+        normalizedUrl = normalizedUrl.replace(/\/$/, '');
+      }
+    }
+    const normalizedUser = (username || '').trim().toLowerCase();
     return `${PWD_STORAGE_PREFIX}${normalizedUrl}_${normalizedUser}`;
   }
 
@@ -258,16 +271,6 @@
       console.warn('Failed to set master password:', e);
       return false;
     }
-  }
-
-  /**
-   * Get the master password from session memory.
-   * Returns null if not set or not verified in this session.
-   *
-   * @returns {string|null} Master password or null
-   */
-  function getMasterPassword() {
-    return sessionMasterPassword;
   }
 
   /**
@@ -581,20 +584,36 @@
         $('#torrServerMasterPwdModal').remove();
       };
 
+      let isVerifying = false;
       const verify = async () => {
+        // Guard against concurrent verification attempts
+        if (isVerifying) {
+          return;
+        }
+
         const pwd = $('#tsMasterPwdPrompt').val();
         if (!pwd) {
           $('#tsMasterPwdErr').text('Введите мастер-пароль').show();
           return;
         }
-        const isValid = await verifyMasterPassword(pwd);
-        if (isValid) {
-          sessionMasterPassword = pwd;
-          cleanup();
-          resolve(true);
-        } else {
-          $('#tsMasterPwdErr').text('Неверный мастер-пароль').show();
-          $('#tsMasterPwdPrompt').val('').focus();
+
+        isVerifying = true;
+        $('#tsMasterPwdOk').prop('disabled', true);
+        $('#tsMasterPwdErr').hide();
+
+        try {
+          const isValid = await verifyMasterPassword(pwd);
+          if (isValid) {
+            sessionMasterPassword = pwd;
+            cleanup();
+            resolve(true);
+          } else {
+            $('#tsMasterPwdErr').text('Неверный мастер-пароль').show();
+            $('#tsMasterPwdPrompt').val('').focus();
+          }
+        } finally {
+          isVerifying = false;
+          $('#tsMasterPwdOk').prop('disabled', false);
         }
       };
 
@@ -930,8 +949,9 @@
       const success = await setMasterPassword(masterPwd);
       if (success) {
         $('#tsMasterPwdStatus').text('✓ Мастер-пароль установлен').css('color', '#2d7d46');
-        // Re-encrypt all existing passwords with the new master password
-        // This is done automatically when passwords are accessed next time
+        // WARNING: When master password is changed, passwords encrypted with the old master
+        // password cannot be decrypted with the new one. Users will need to re-enter their
+        // passwords. The old encrypted passwords will remain in storage but will be inaccessible.
       } else {
         $('#tsErr').text('Не удалось установить мастер-пароль').show();
         return;
