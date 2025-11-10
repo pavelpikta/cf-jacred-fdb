@@ -28,6 +28,9 @@
  */
 (function (global) {
   const LS_KEY = 'torrserver_conf_v1';
+  // Use CDN-loaded CryptoJS or require if available.
+  // If using modules: import CryptoJS from 'crypto-js';
+  const CryptoJS = window.CryptoJS || (typeof require === 'function' ? require('crypto-js') : null);
   function lsGet(k) {
     try {
       return localStorage.getItem(k);
@@ -48,10 +51,21 @@
     if (!raw) return { url: '', username: '', password: '', direct: false };
     try {
       const j = JSON.parse(raw);
+      let decryptedPwd = '';
+      if (j.password && j.username && CryptoJS) {
+        try {
+          const bytes = CryptoJS.AES.decrypt(j.password, j.username);
+          decryptedPwd = bytes.toString(CryptoJS.enc.Utf8);
+        } catch (e) {
+          decryptedPwd = '';
+        }
+      } else {
+        decryptedPwd = j.password || '';
+      }
       return {
         url: j.url || '',
         username: j.username || '',
-        password: j.password || '',
+        password: decryptedPwd,
         direct: !!j.direct,
       };
     } catch (e) {
@@ -59,7 +73,11 @@
     }
   }
   function saveConf(c) {
-    lsSet(LS_KEY, JSON.stringify(c));
+    const confToSave = Object.assign({}, c);
+    if (confToSave.password && confToSave.username && CryptoJS) {
+      confToSave.password = CryptoJS.AES.encrypt(confToSave.password, confToSave.username).toString();
+    }
+    lsSet(LS_KEY, JSON.stringify(confToSave));
   }
 
   let pendingPromiseResolve = null;
