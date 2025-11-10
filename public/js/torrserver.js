@@ -1181,12 +1181,27 @@
    * This is a convenience method that combines loadConf() with getPassword().
    * Retrieves password from obfuscated storage or session memory.
    * WARNING: The encryption is predictable (origin-derived) and provides obfuscation only.
+   * Prompts for master password if needed before decrypting.
    *
    * @returns {Promise<Object>} Configuration object with url, username, password, direct
+   *                           If master password is required but unlock fails, returns conf without password
    */
   async function getConfWithPassword() {
     const conf = loadConf();
     if (conf.username && conf.url) {
+      // Check if master password is configured and if session is unlocked
+      // If master password is set but session is locked, attempt to unlock
+      if (hasMasterPassword() && !sessionMasterPassword) {
+        // Attempt to unlock via prompt flow
+        const masterPwdOk = await promptMasterPasswordIfNeeded();
+        if (!masterPwdOk) {
+          // User cancelled master password prompt - bail out cleanly
+          // Return conf without password to preserve the stored encrypted password
+          return { ...conf, password: '' };
+        }
+      }
+      // Now safe to call getPassword() - either no master password is set,
+      // or master password is set and session is unlocked
       const password = await getPassword(conf.url, conf.username, conf.persistPassword);
       return { ...conf, password };
     }
