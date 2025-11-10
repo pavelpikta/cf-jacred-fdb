@@ -62,7 +62,14 @@
         try {
           const bytes = CryptoJS.AES.decrypt(j.password, j.username);
           decryptedPwd = bytes.toString(CryptoJS.enc.Utf8);
+          // If decryption fails, bytes.toString() returns empty string
+          // Fall back to empty if decryption result is invalid
+          if (!decryptedPwd) {
+            decryptedPwd = '';
+          }
         } catch (e) {
+          // If decryption throws an error, fall back to empty password
+          console.warn('Password decryption failed:', e);
           decryptedPwd = '';
         }
       } else {
@@ -81,15 +88,18 @@
   function saveConf(c) {
     const confToSave = Object.assign({}, c);
     if (confToSave.password && confToSave.username) {
-      // Secure password hashing using PBKDF2
-      const iterations = 100000; // Increase iterations for security
-      const keySize = 64 / 4; // 64 bytes, in words: 16 words (1 word = 4 bytes)
-      // If possible, use a per-user salt; here we use username
-      const salt = confToSave.username || 'torrserver_default_salt';
-      confToSave.password = CryptoJS.PBKDF2(confToSave.password, salt, {
-        keySize,
-        iterations,
-      }).toString();
+      // Encrypt password using AES with username as key (symmetric encryption)
+      try {
+        const encrypted = CryptoJS.AES.encrypt(confToSave.password, confToSave.username);
+        confToSave.password = encrypted.toString();
+      } catch (e) {
+        // If encryption fails, fall back to empty password
+        console.warn('Password encryption failed:', e);
+        confToSave.password = '';
+      }
+    } else if (confToSave.password && !confToSave.username) {
+      // If password exists but no username, clear password (can't encrypt without key)
+      confToSave.password = '';
     }
     lsSet(LS_KEY, JSON.stringify(confToSave));
   }
