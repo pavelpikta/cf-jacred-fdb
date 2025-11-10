@@ -35,8 +35,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "crypto-js": "^4.2.0"
   }
 }
