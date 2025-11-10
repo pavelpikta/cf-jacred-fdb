@@ -1,27 +1,50 @@
 /**
- * stats.js
+ * stats.js - Tracker Statistics Dashboard Client Logic
  * ---------------------------------------------------------------------------
+ *
  * Purpose
- *   Client logic for `stats.html`: fetch and display per‑tracker statistics with
- *   client-side filtering, sorting, layout & theme preferences, and aggregate
- *   totals. Optimizes perceived performance via localStorage caching.
+ *   Main client-side JavaScript for the tracker statistics page. Handles fetching
+ *   and displaying per-tracker statistics with client-side filtering, sorting,
+ *   layout preferences, theme switching, and aggregate totals. Optimizes
+ *   perceived performance through localStorage caching and staggered animations.
  *
  * Key Features
- *   - Edge API endpoint: GET /api/stats/torrents (optionally with ?apikey=)
- *   - Local cache (5 min TTL) to reduce redundant network calls on tab revisit
- *   - Dynamic card rendering with stale data highlighting (age thresholds)
- *   - Aggregate summary card (sum across trackers) with proportional tracks bar
- *   - Responsive layout: wide mode, compact mode, number formatting modes
- *   - Light/Dark theme toggle (with system preference initialisation)
- *   - Debounced filtering + auto refresh every 10 minutes (visible tab only)
+ *   - API endpoint: GET /api/stats/torrents (with optional ?apikey= parameter)
+ *   - Local cache with 5-minute TTL to reduce redundant network requests
+ *   - Dynamic card rendering with stale data highlighting (visual indicators)
+ *   - Aggregate summary card showing totals across all trackers
+ *   - Proportional tracks distribution bar visualization
+ *   - Responsive layout modes: wide mode, compact mode
+ *   - Number formatting: full numbers vs. abbreviated (K/M/B)
+ *   - Light/Dark theme toggle with system preference detection
+ *   - Debounced filtering (200ms delay) for smooth UX
+ *   - Auto-refresh every 10 minutes (only when tab is visible)
+ *   - Staggered animations for card entrance
  *
- * Data Contract (item shape excerpt)
- *   {
- *     trackerName: string,
- *     newtor, update, check, alltorrents: number,
- *     lastnewtor: 'dd.mm.yyyy',
- *     tracks: { wait, confirm, skip }
- *   }
+ * Data Structure
+ *   Each tracker statistics item contains:
+ *   - trackerName: string - Tracker identifier
+ *   - newtor: number - Count of new torrents
+ *   - update: number - Count of updated torrents
+ *   - check: number - Count of checked torrents
+ *   - alltorrents: number - Total torrent count
+ *   - lastnewtor: string - Date of last new torrent (format: 'dd.mm.yyyy')
+ *   - tracks: object - Distribution tracking:
+ *     - wait: number - Torrents waiting for confirmation
+ *     - confirm: number - Confirmed torrents
+ *     - skip: number - Skipped torrents
+ *
+ * Architecture
+ *   - Dependency waiting pattern for jQuery and ApiKey module
+ *   - localStorage-based caching and preferences
+ *   - Event delegation for dynamically rendered elements
+ *   - RequestAnimationFrame for scroll-based UI updates
+ *
+ * Performance Notes
+ *   - Cache reduces API calls on page revisits
+ *   - Debounced filtering prevents excessive re-renders
+ *   - Staggered animations use CSS variables for efficiency
+ *   - Visibility API prevents background refreshes
  */
 function __initStats() {
   const API_BASE = '/api';
@@ -39,17 +62,30 @@ function __initStats() {
   const toggleThemeBtn = $('#toggleTheme');
   const toggleNumbersBtn = $('#toggleNumbers');
 
-  let rawData = [];
-  let viewData = [];
-  let autoRefreshTimer = null;
+  // State management
+  let rawData = []; // Raw data from API (all trackers)
+  let viewData = []; // Filtered and sorted data for display
+  let autoRefreshTimer = null; // Interval timer for auto-refresh
 
-  const CACHE_KEY = 'statsCacheV1';
-  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-  const THEME_KEY = 'statsTheme'; // 'dark' | 'light'
-  const NUM_MODE_KEY = 'statsNumbersFull'; // '1' | '0'
+  // localStorage keys for caching and preferences
+  const CACHE_KEY = 'statsCacheV1'; // Cache key for statistics data
+  const CACHE_TTL_MS = 5 * 60 * 1000; // Cache TTL: 5 minutes
+  const THEME_KEY = 'statsTheme'; // Theme preference: 'dark' | 'light'
+  const NUM_MODE_KEY = 'statsNumbersFull'; // Number format: '1' (full) | '0' (abbreviated)
 
+  // Number formatting mode preference
   let numbersFull = localStorage.getItem(NUM_MODE_KEY) === '1';
 
+  /**
+   * Debounce function to limit rapid function calls
+   *
+   * Delays function execution until after wait period has passed since
+   * last invocation. Useful for input filtering and resize handlers.
+   *
+   * @param {Function} fn - Function to debounce
+   * @param {number} wait - Wait time in milliseconds (default: 180ms)
+   * @returns {Function} - Debounced function
+   */
   function debounce(fn, wait = 180) {
     let t;
     return function (...args) {
@@ -58,7 +94,18 @@ function __initStats() {
     };
   }
 
-  // Short human number formatter (K/M/B) used in compact number mode.
+  /**
+   * Format number in human-readable abbreviated form (K/M/B)
+   *
+   * Converts large numbers to abbreviated format:
+   * - < 1000: unchanged (e.g., 999)
+   * - < 1M: K suffix (e.g., 1.5K)
+   * - < 1B: M suffix (e.g., 2.3M)
+   * - >= 1B: B suffix (e.g., 1.2B)
+   *
+   * @param {number|null} num - Number to format
+   * @returns {string} - Formatted string (e.g., "1.5K") or "—" if null
+   */
   function human(num) {
     if (num == null) return '—';
     if (num < 1000) return num + '';
@@ -67,7 +114,17 @@ function __initStats() {
     return (num / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
   }
 
-  // Map last new torrent date -> CSS class indicating staleness thresholds.
+  /**
+   * Determine CSS class for stale data indicator based on date
+   *
+   * Calculates days since last new torrent and returns appropriate CSS class:
+   * - > 90 days: 'very-stale' (red, urgent)
+   * - > 7 days: 'stale' (orange, warning)
+   * - <= 7 days: '' (normal, no indicator)
+   *
+   * @param {string} dateStr - Date string in format 'dd.mm.yyyy'
+   * @returns {string} - CSS class name or empty string
+   */
   function staleClass(dateStr) {
     if (!dateStr) return '';
     const [d, m, y] = dateStr.split('.').map(Number);
@@ -78,7 +135,16 @@ function __initStats() {
     return '';
   }
 
-  /** Load cached stats if still fresh; returns true when used. */
+  /**
+   * Load cached statistics from localStorage if still fresh
+   *
+   * Checks cache validity based on TTL. If cache exists and is valid:
+   * - Loads data into rawData
+   * - Updates lastUpdate display with "(кэш)" indicator
+   * - Applies filters and sorting
+   *
+   * @returns {boolean} - True if cache was loaded and used, false otherwise
+   */
   function loadCache() {
     try {
       const raw = localStorage.getItem(CACHE_KEY);
@@ -94,14 +160,27 @@ function __initStats() {
       return false;
     }
   }
-  /** Persist current rawData to localStorage for subsequent page visits. */
+  /**
+   * Save current rawData to localStorage cache
+   *
+   * Stores statistics data with current timestamp for TTL validation
+   * on subsequent page loads. Silently handles storage errors.
+   */
   function saveCache() {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: rawData }));
     } catch (e) {}
   }
 
-  /** Render number in current presentation mode (full vs compact abbreviations). */
+  /**
+   * Format number according to current display mode
+   *
+   * If numbersFull is true: formats with thousands separators (ru-RU locale)
+   * If numbersFull is false: uses abbreviated format (K/M/B)
+   *
+   * @param {number|null} num - Number to format
+   * @returns {string} - Formatted number string or "—" if null
+   */
   function formatNumber(num) {
     if (num == null) return '—';
     if (!numbersFull) return human(num);
@@ -116,7 +195,19 @@ function __initStats() {
     }
   }
 
-  /** Build HTML for a single tracker card including proportional tracks bar. */
+  /**
+   * Build HTML string for a single tracker statistics card
+   *
+   * Creates a complete card with:
+   * - Tracker icon and name
+   * - Last new torrent date (with stale indicator if applicable)
+   * - Statistics boxes (new, update, check, total, tracks)
+   * - Proportional tracks distribution bar (wait/confirm/skip)
+   * - Tracks legend with percentages
+   *
+   * @param {Object} item - Tracker statistics object
+   * @returns {string} - HTML string for the tracker card
+   */
   function buildCard(item) {
     const totalTracks =
       (item.tracks.wait || 0) + (item.tracks.confirm || 0) + (item.tracks.skip || 0);
@@ -171,7 +262,17 @@ function __initStats() {
       </div>`;
   }
 
-  /** Render or update aggregate summary card (sum of all trackers). */
+  /**
+   * Render aggregate summary card showing totals across all trackers
+   *
+   * Calculates sums for all statistics fields and creates a summary card
+   * with the same structure as individual tracker cards. Includes:
+   * - Total counts across all trackers
+   * - Proportional tracks distribution bar
+   * - Visual distinction (aggregate-card class)
+   *
+   * Only renders if rawData contains items. Clears aggregateHost if empty.
+   */
   function renderAggregate() {
     if (!rawData.length) {
       aggregateHost.empty();
@@ -238,7 +339,13 @@ function __initStats() {
       </div>`);
   }
 
-  /** Insert current viewData cards into grid or show empty state. */
+  /**
+   * Render current viewData cards into grid with staggered animations
+   *
+   * Builds HTML for all tracker cards with animation delays based on index.
+   * Each card gets a CSS variable (--card-index) and animation-delay for
+   * smooth sequential entrance effect. Updates counter and handles empty state.
+   */
   function render() {
     if (!viewData.length) {
       grid.empty();
@@ -248,11 +355,32 @@ function __initStats() {
     }
     emptyState.hide();
     counterEl.text(viewData.length);
-    const html = viewData.map(buildCard).join('');
+    const html = viewData
+      .map((item, idx) => {
+        const cardHtml = buildCard(item);
+        // Add index for staggered animation
+        return cardHtml.replace(
+          '<div class="tracker-card',
+          `<div class="tracker-card" style="--card-index: ${idx}; animation-delay: ${idx * 0.03}s"`
+        );
+      })
+      .join('');
     grid.html(html);
+
+    // Trigger reflow for animation
+    void grid[0].offsetHeight;
   }
 
-  /** Apply text filter + selected sort mode to rawData producing viewData. */
+  /**
+   * Apply text filter and sorting to rawData, producing viewData
+   *
+   * Filters trackers by name (case-insensitive substring match) and sorts
+   * by selected criteria:
+   * - 'name': Alphabetical by tracker name
+   * - Other: Descending numeric sort by selected field
+   *
+   * Updates viewData and triggers render.
+   */
   function applyFilterSort() {
     const q = searchInput.val().trim().toLowerCase();
     viewData = rawData.filter((r) => !q || r.trackerName.toLowerCase().includes(q));
@@ -272,7 +400,17 @@ function __initStats() {
     render();
   }
 
-  /** Helper to append current API key (if present) to stats fetch URL. */
+  /**
+   * Build API key query parameter for stats fetch URL
+   *
+   * Attempts to get API key from:
+   * 1. window.ApiKey module (if available)
+   * 2. localStorage fallback
+   *
+   * Returns URL-encoded query parameter string or empty string if no key.
+   *
+   * @returns {string} - Query parameter string (e.g., "&apikey=...") or ""
+   */
   function buildApiKeyParam() {
     try {
       if (window.ApiKey) {
@@ -285,7 +423,21 @@ function __initStats() {
     return '';
   }
 
-  /** Fetch latest stats JSON; on success update UI + cache. */
+  /**
+   * Fetch latest statistics from API and update UI
+   *
+   * Makes AJAX request to /api/stats/torrents endpoint. On success:
+   * - Updates rawData with fresh data
+   * - Saves to cache
+   * - Renders aggregate card
+   * - Applies filters and sorting
+   * - Shows visual feedback if manual refresh
+   *
+   * On error: displays error message with details (HTTP status, structured
+   * error JSON if available, or fallback message).
+   *
+   * @param {boolean} manual - True if triggered by user (shows flash animation)
+   */
   function fetchStats(manual = false) {
     loading.show();
     errorBox.hide();
@@ -340,6 +492,13 @@ function __initStats() {
     });
   }
 
+  /**
+   * Apply wide mode layout state
+   *
+   * Reads preference from localStorage or auto-detects based on screen width.
+   * Toggles 'stats-wide' class on body and updates button text.
+   * Auto-detection: > 1100px enables wide mode by default.
+   */
   function applyWideState() {
     let wideStored = localStorage.getItem('statsWide');
     if (wideStored === null) {
@@ -350,13 +509,25 @@ function __initStats() {
     $('body').toggleClass('stats-wide', wide);
     toggleWidthBtn.text(wide ? 'Обычный режим' : 'Широкий режим');
   }
+  /**
+   * Apply compact mode layout state
+   *
+   * Reads preference from localStorage and toggles 'stats-compact' class
+   * on body. Updates button text to reflect current state.
+   */
   function applyCompactState() {
     const compact = localStorage.getItem('statsCompact') === '1';
     $('body').toggleClass('stats-compact', compact);
     toggleCompactBtn.text(compact ? 'Обычный размер' : 'Compact');
   }
 
-  /** Initialize or reapply theme (persisted or system preference fallback). */
+  /**
+   * Initialize or reapply theme preference
+   *
+   * Reads theme from localStorage or detects system preference via
+   * prefers-color-scheme media query. Sets 'data-theme' attribute on
+   * documentElement and updates toggle button text.
+   */
   function applyTheme() {
     let t = localStorage.getItem(THEME_KEY);
     if (!t) {
@@ -368,6 +539,11 @@ function __initStats() {
     toggleThemeBtn.text(t === 'dark' ? 'Светлая' : 'Темная');
   }
 
+  /**
+   * Toggle between dark and light theme
+   *
+   * Switches theme preference and saves to localStorage, then reapplies.
+   */
   function toggleTheme() {
     const current = localStorage.getItem(THEME_KEY) || 'dark';
     const next = current === 'dark' ? 'light' : 'dark';
@@ -375,7 +551,13 @@ function __initStats() {
     applyTheme();
   }
 
-  /** Update toggle text to reflect current number formatting mode. */
+  /**
+   * Update number format toggle button text
+   *
+   * Updates button text to reflect current formatting mode:
+   * - Full mode: "Сокращённо"
+   * - Abbreviated mode: "Полные числа"
+   */
   function applyNumbersMode() {
     toggleNumbersBtn.text(numbersFull ? 'Сокращённо' : 'Полные числа');
   }
@@ -457,8 +639,21 @@ function __initStats() {
   });
 }
 
-// Ensure jQuery present before executing (handles race if script order altered or CDN latency)
-// Ожидаем jQuery и (по возможности) модуль ApiKey, затем инициализируем и только после ensure() выполняем первый fetch.
+/* ========================================================================
+ * DEPENDENCY WAITING & INITIALIZATION
+ * ======================================================================== */
+
+/**
+ * Wait for jQuery and optionally ApiKey module before initializing
+ *
+ * Handles race conditions where scripts may load out of order or with
+ * CDN latency. Retries up to 40 times (~2 seconds) before giving up.
+ *
+ * Once dependencies are loaded:
+ * 1. Initializes stats module
+ * 2. Waits for ApiKey module (if available)
+ * 3. Executes initial fetch after API key validation
+ */
 (function waitForDeps(retries) {
   if (!window.jQuery || !window.$) {
     if (retries > 40) {
@@ -469,13 +664,19 @@ function __initStats() {
   }
   __initStats();
 
+  /**
+   * Start initial statistics fetch after API key validation
+   *
+   * Called after ApiKey.ensure() completes. Executes fetch with
+   * manual=true flag for visual feedback.
+   */
   function startFetch() {
     if (typeof window.__statsRefetch === 'function') {
       window.__statsRefetch(true);
     }
   }
 
-  // Если модуль ApiKey уже загружен – используем его, иначе ждём немного, затем fallback без ключа.
+  // Try to use ApiKey module if available, otherwise wait briefly then fallback
   if (window.ApiKey && typeof window.ApiKey.ensure === 'function') {
     window.ApiKey.ensure(startFetch);
     return;
@@ -494,7 +695,16 @@ function __initStats() {
     }
   })();
 
-  /* ---------------------- Back To Top ---------------------- */
+  /* ========================================================================
+   * BACK TO TOP BUTTON
+   * ======================================================================== */
+
+  /**
+   * Initialize scroll-to-top button
+   *
+   * Shows button when user scrolls past 120px threshold. Uses jQuery
+   * scroll event handler for simplicity. Smooth scrolls to top on click.
+   */
   (function initBackToTop() {
     const $btn = $('#back-to-top');
     if (!$btn.length) return;

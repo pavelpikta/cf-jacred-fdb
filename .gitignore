@@ -48,4 +48,6 @@ asset-manifest.json
 # Cloudflare worker library
 !lib/
 
+.wrangler
+
 # End of file

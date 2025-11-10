@@ -32,13 +32,16 @@
     try {
       return localStorage.getItem(k);
     } catch (e) {
+      console.warn('localStorage read failed:', e);
       return null;
     }
   }
   function lsSet(k, v) {
     try {
       localStorage.setItem(k, v);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('localStorage write failed:', e);
+    }
   }
   function loadConf() {
     const raw = lsGet(LS_KEY);
@@ -95,8 +98,23 @@
     const direct = $('#tsDirect').is(':checked');
     if (!url) {
       $('#tsErr').text('Укажите URL').show();
+      $('#tsUrl').attr('aria-invalid', 'true').focus();
       return;
     }
+    // Validate URL format
+    try {
+      const urlObj = new URL(url);
+      if (!['http:', 'https:'].includes(urlObj.protocol)) {
+        $('#tsErr').text('Используйте http:// или https://').show();
+        $('#tsUrl').attr('aria-invalid', 'true').focus();
+        return;
+      }
+    } catch (e) {
+      $('#tsErr').text('Неверный формат URL').show();
+      $('#tsUrl').attr('aria-invalid', 'true').focus();
+      return;
+    }
+    $('#tsUrl').attr('aria-invalid', 'false');
     saveConf({ url, username, password, direct });
     closeModal(true);
   }
@@ -149,14 +167,21 @@
     const bodyStr = JSON.stringify({ action: 'add', link: magnet });
     const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
     if (auth) headers['Authorization'] = auth;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
     fetch(addUrl, {
       method: 'POST',
       headers,
       body: bodyStr,
       credentials: 'include',
       cache: 'no-store',
+      signal: controller.signal,
     })
-      .then((r) => r.text().then((t) => ({ r, t })))
+      .then((r) => {
+        clearTimeout(timeoutId);
+        return r.text().then((t) => ({ r, t }));
+      })
       .then(({ r, t }) => {
         if (r.ok) {
           toast('Отправлено (прямой режим)', 'ok');
@@ -176,7 +201,12 @@
         }
       })
       .catch((e) => {
-        toast('Прямой режим: сеть/корс ошибка', 'err');
+        clearTimeout(timeoutId);
+        if (e.name === 'AbortError') {
+          toast('Превышено время ожидания', 'err');
+        } else {
+          toast('Прямой режим: сеть/корс ошибка', 'err');
+        }
         if (debug) {
           console.warn('Direct TorrServer network error', e);
         }

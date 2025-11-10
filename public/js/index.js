@@ -1,30 +1,60 @@
 /**
- * index.js
+ * index.js - Torrent Search Page Client Logic
  * ---------------------------------------------------------------------------
+ *
  * Purpose
- *   Search page client logic (originally inline in index.html) extracted for
- *   maintainability. Handles query persistence, API key integration, rendering
- *   of torrent search results, dynamic filter population, and client-side
- *   sorting + filtering.
+ *   Main client-side JavaScript for the torrent search page. Handles search
+ *   query persistence, API key integration, dynamic result rendering with
+ *   staggered animations, comprehensive filtering system, and client-side
+ *   sorting. Originally inline in index.html, extracted for better maintainability.
  *
  * Key Features
- *   - Debounced search execution persisted via localStorage ("search", "sort", "exact")
- *   - Dynamic facet extraction (voices, trackers, years, seasons, categories, quality)
- *   - Accessible updates: aria-busy, minimal empty/loading/no-results states
- *   - API key resolution delegated to modal.apikey.js (graceful 403 handling)
- *   - Clickable tracker badge toggles filter + subtle visual feedback (pulse)
- *   - Defensive guards against absent optional arrays (media, voices, seasons)
+ *   - Search query persistence via localStorage (survives page reloads)
+ *   - Dynamic filter population from search results (voice, tracker, year, etc.)
+ *   - Client-side filtering and sorting (no additional API calls)
+ *   - Staggered animations for result cards (smooth visual feedback)
+ *   - API key integration via modal.apikey.js module
+ *   - Clickable tracker badges for quick filter application
+ *   - Accessibility support (ARIA labels, live regions, keyboard navigation)
+ *   - XSS protection via HTML escaping
+ *   - Responsive design with mobile touch optimizations
  *
- * Data Contracts (selected fields expected on each result item)
- *   title, url, magnet, tracker, sizeName, createTime (epoch ms or ISO),
- *   sid (seeders), pir (leechers), videoInfo{ video,audio,subtitle,voice },
- *   media[] (optional), voices[], seasons[], types[], relased (year), quality
+ * Data Structure
+ *   Each search result item contains:
+ *   - title: string - Torrent title/name
+ *   - url: string - Tracker page URL
+ *   - magnet: string - Magnet link URI
+ *   - tracker: string - Tracker identifier (rutor, rutracker, etc.)
+ *   - sizeName: string - Human-readable file size
+ *   - createTime: number|string - Creation timestamp (epoch ms or ISO)
+ *   - sid: number - Seeders count
+ *   - pir: number - Leechers count
+ *   - videoInfo: object - { video, audio, subtitle, voice }
+ *   - media: array - Optional file list [{ path: string }]
+ *   - voices: array - Available voice-over options
+ *   - seasons: array - Season numbers (for TV series)
+ *   - types: array - Category types
+ *   - relased: number - Release year
+ *   - quality: number - Video quality (720p, 1080p, etc.)
  *
- * Extensibility Notes
- *   - To add another filter dimension: add to filterCache, populate in
- *     initFilterLists(), include logic in applyFilters(), and extend UI markup.
- *   - Build item HTML is centralized in buildItem(); prefer enhancing markup
- *     there instead of ad‑hoc DOM mutations post render.
+ * Architecture
+ *   - IIFE pattern prevents global namespace pollution
+ *   - jQuery-based DOM manipulation for compatibility
+ *   - Event delegation for dynamically rendered elements
+ *   - Modular filter system (easily extensible)
+ *
+ * Extensibility
+ *   To add a new filter dimension:
+ *   1. Add filter name to filterCache object
+ *   2. Extract values in initFilterLists()
+ *   3. Add filter logic in applyFilters()
+ *   4. Add UI control in index.html filter section
+ *
+ * Performance Notes
+ *   - Debounced input filtering (200ms delay)
+ *   - Staggered animations use CSS variables for efficiency
+ *   - Result caching prevents unnecessary re-renders
+ *   - RequestAnimationFrame for scroll-based animations
  */
 (function () {
   const API_BASE = '/api';
@@ -36,8 +66,77 @@
   const $input = $('#s');
   const $filterBox = $('#filter');
   const $form = $('#search');
+  const UA = navigator.userAgent;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(UA);
+  if (isSafari) {
+    document.documentElement.classList.add('ua-safari');
+  }
 
-  // Tracker metadata for color coding & tooltip text
+  const escapeNode = document.createElement('div');
+
+  function escapeHtml(str = '') {
+    escapeNode.textContent = str;
+    return escapeNode.innerHTML;
+  }
+
+  /**
+   * Escape string for safe use inside double-quoted HTML attributes
+   * Escapes special characters and bare ampersands (not part of valid HTML entities)
+   * @param {string} value
+   * @returns {string}
+   */
+  function escapeAttribute(value = '') {
+    let escaped = String(value).replace(/["'<>`]/g, (ch) => {
+      switch (ch) {
+        case '"':
+          return '&quot;';
+        case "'":
+          return '&#39;';
+        case '<':
+          return '&lt;';
+        case '>':
+          return '&gt;';
+        case '`':
+          return '&#96;';
+        default:
+          return ch;
+      }
+    });
+    // Escape bare ampersands that are not part of valid HTML entities
+    // Valid entities: &#123; (decimal), &#x1F; (hex), &amp; (named)
+    // Pattern matches & not followed by valid entity pattern: /#\d+;|#x[0-9a-fA-F]+;|\w+;/
+    escaped = escaped.replace(/&(?!#\d+;|#x[0-9a-fA-F]+;|\w+;)/g, '&amp;');
+    return escaped;
+  }
+
+  /**
+   * Sanitize URL by stripping javascript: protocol and falling back to '#'
+   * @param {string} url - URL to sanitize
+   * @returns {string} - Sanitized URL (stripped of javascript: or '#')
+   */
+  function sanitizeUrl(url = '') {
+    const trimmed = String(url || '').trim();
+    // Strip all leading "javascript:" protocols (case-insensitive) until none remain
+    const sanitized = trimmed.replace(/^(javascript:)+/i, '');
+    return sanitized || '#';
+  }
+
+  /**
+   * Normalize tracker identifiers for consistent comparisons and lookups
+   * @param {string} str - Tracker identifier as provided by API
+   * @returns {string} - Sanitized tracker identifier (fallbacks to 'unknown')
+   */
+  function normalizeTrackerName(str = '') {
+    const trimmed = (str || '').trim();
+    const cleaned = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+    return cleaned || 'unknown';
+  }
+
+  /**
+   * Tracker Metadata Configuration
+   * Maps tracker identifiers to their display colors and labels for badges.
+   * Used for visual distinction and accessibility tooltips.
+   */
   const TRACKER_META = {
     rutor: { color: '#9c2d2d', label: 'Rutor: общетематический трекер' },
     selezen: { color: '#10162d', label: 'Selezen: релизы сериалов/фильмов' },
@@ -56,54 +155,132 @@
     hdrezka: { color: '#3c7e2a', label: 'HDRezka' },
   };
 
-  let allResults = [];
-  let filteredResults = [];
+  // State management
+  let allResults = []; // All results from API (unfiltered)
+  let filteredResults = []; // Filtered results based on active filters
 
-  const filterCache = { voice: [], tracker: [], year: [], season: [], category: [], quality: [] };
+  /**
+   * Filter Cache
+   * Stores unique values extracted from allResults for each filter dimension.
+   * Populated once per search to enable filter dropdown population.
+   */
+  const filterCache = {
+    voice: [], // Voice-over options
+    tracker: [], // Tracker identifiers
+    trackerLabels: {}, // Map of sanitized tracker value -> display label
+    year: [], // Release years
+    season: [], // Season numbers
+    category: [], // Category types
+    quality: [], // Video quality levels
+  };
 
-  /* ---------------------- Utilities ---------------------- */
-  // (debounce utility removed; not currently needed on this page – retained in stats.js if needed later)
+  /* ========================================================================
+   * UTILITIES
+   * ======================================================================== */
+
+  /**
+   * Safe localStorage getter with error handling
+   * @param {string} key - localStorage key
+   * @returns {string|null} - Stored value or null if unavailable/error
+   */
   function lsGet(key) {
     try {
       return window.localStorage.getItem(key);
     } catch (e) {
+      console.warn('localStorage access denied:', e);
       return null;
     }
   }
+  /**
+   * Safe localStorage setter with error handling
+   * @param {string} key - localStorage key
+   * @param {string} val - Value to store
+   */
   function lsSet(key, val) {
     try {
       window.localStorage.setItem(key, val);
-    } catch (e) {}
-  }
-  function fmtDate(ts) {
-    const d = new Date(ts);
-    return (
-      d.getFullYear() +
-      '-' +
-      ('0' + (d.getMonth() + 1)).slice(-2) +
-      '-' +
-      ('0' + d.getDate()).slice(-2)
-    );
+    } catch (e) {
+      console.warn('localStorage write failed:', e);
+    }
   }
 
+  /**
+   * Format timestamp to YYYY-MM-DD date string
+   * @param {number|string} ts - Timestamp (epoch ms or ISO string)
+   * @returns {string} - Formatted date string or error message
+   */
+  function fmtDate(ts) {
+    try {
+      const d = new Date(ts);
+      // Validate date
+      if (isNaN(d.getTime())) {
+        return 'Invalid date';
+      }
+      return (
+        d.getFullYear() +
+        '-' +
+        ('0' + (d.getMonth() + 1)).slice(-2) +
+        '-' +
+        ('0' + d.getDate()).slice(-2)
+      );
+    } catch (e) {
+      console.error('Date formatting error:', e);
+      return 'Error';
+    }
+  }
+
+  /**
+   * Update ARIA busy state for results container
+   * @param {boolean} b - True if busy (loading), false otherwise
+   */
   function setBusy(b) {
     $results.attr('aria-busy', b ? 'true' : 'false');
   }
+
+  /**
+   * Show only one message element (empty/loading/noresults)
+   * @param {jQuery|null} el - Element to show, or null to hide all
+   */
   function showOnly(el) {
     [$empty, $loading, $noresults].forEach((e) => e.hide());
     if (el) el.show();
   }
+
+  /**
+   * Clear results container and hide summary
+   */
   function clearResults() {
     $results.empty();
     $resultsSummary.hide();
   }
 
-  /* ---------------------- Rendering ---------------------- */
-  /** Build HTML string for a single search result card. */
+  /* ========================================================================
+   * RENDERING
+   * ======================================================================== */
+
+  /**
+   * Build HTML string for a single search result card
+   *
+   * Creates a complete result card with:
+   * - Title with link to tracker page
+   * - Video/audio/subtitle/voice information
+   * - File list (if available)
+   * - Tracker badge with color coding
+   * - Metadata (size, date, seeders, leechers)
+   * - Action buttons (magnet link, TorrServer send)
+   *
+   * @param {Object} r - Result item object
+   * @returns {string} - HTML string for the result card
+   */
   function buildItem(r) {
-    const trackerIco = './img/ico/' + r.tracker + '.ico';
+    const trackerOriginal = (r.tracker || 'unknown').trim();
+    const trackerName = normalizeTrackerName(trackerOriginal);
+    const trackerDisplay = trackerOriginal || trackerName;
+    const trackerIco = `./img/ico/${trackerName}.ico`;
     const seeders = r.sid || 0;
     const leechers = r.pir || 0;
+
+    // Build info blocks for video/audio/subtitle/voice details
     const infoBlocks = [];
     if (r.videoInfo) {
       infoBlocks.push(
@@ -112,41 +289,112 @@
     }
     let filesIcon = '';
     if (Array.isArray(r.media) && r.media.length) {
-      const list = r.media.map((f) => `<div>${f.path}</div>`).join('');
+      const list = r.media
+        .map((f) => {
+          const path = f && typeof f.path === 'string' ? f.path : '';
+          return `<div>${escapeHtml(path)}</div>`;
+        })
+        .join('');
       infoBlocks.push(
         `<div class="files"><div class="files-title">Файлы</div><div class="files-list">${list}</div></div>`
       );
       filesIcon = `<span class="files" data-files="1">≣ (${r.media.length})</span>`;
     }
-    const meta = TRACKER_META[r.tracker] || {};
+    // Get tracker metadata for badge styling and tooltip
+    const meta = TRACKER_META[trackerName] || {};
     const trackerColor = meta.color || '#262626';
-    const trackerLabel = meta.label || r.tracker;
+    const safeTrackerColor = escapeAttribute(trackerColor);
+    const trackerTooltip = meta.label || trackerDisplay || trackerName;
+    const safeTrackerTooltip = escapeAttribute(trackerTooltip);
+    const trackerLabelSource = meta.label ? meta.label.split(':')[0] : trackerDisplay;
+    const trackerLabelText = escapeHtml((trackerLabelSource || trackerDisplay || 'unknown').trim());
+    const safeTrackerDisplay = escapeAttribute(trackerDisplay);
+    const safeTrackerName = escapeAttribute(trackerName);
+    const safeTrackerColorStyle = escapeAttribute(trackerColor);
+    const trackerLabelMarkup = trackerLabelText
+      ? `<span class="tracker-label" aria-hidden="true" style="--tracker-color:${safeTrackerColorStyle}">${trackerLabelText}</span>`
+      : '';
+
+    // Check if this tracker is currently active in filter (for visual highlight)
     const currentTrackerFilter = $('[name="tracker"]', $filterBox).val();
     const isActiveTracker =
       currentTrackerFilter &&
       currentTrackerFilter !== 'Любой' &&
-      currentTrackerFilter === r.tracker;
-    return `<div class="webResult item">\n  <p><a href="${r.url}" target="_blank" rel="noopener">${r.title}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${r.tracker}" style="--tracker-color:${trackerColor}" aria-label="${trackerLabel}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${trackerIco}" alt="${r.tracker}"><span class="tracker-name">${r.tracker}</span></span>\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet"><a class="magneto ut-download-url" href="${r.magnet}"></a></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
+      currentTrackerFilter === trackerName;
+
+    const safeTitle = escapeHtml(r.title || 'Untitled');
+    const safeUrl = escapeAttribute(sanitizeUrl(r.url));
+    const safeIco = escapeAttribute(trackerIco);
+    const trimmedMagnet = (r.magnet || '').trim();
+    const hasMagnet = trimmedMagnet.length > 0;
+    const magnetHref = hasMagnet ? sanitizeUrl(trimmedMagnet) : '#';
+    const safeMagnetHref = escapeAttribute(magnetHref);
+    const magnetEncoded = hasMagnet ? encodeURIComponent(trimmedMagnet) : '';
+    const safeMagnetEncoded = escapeAttribute(magnetEncoded);
+    const magnetButtonAttrs = hasMagnet
+      ? `data-magnet="${safeMagnetEncoded}"`
+      : 'data-magnet="" disabled aria-disabled="true"';
+    return `<div class="webResult item">\n  <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeTitle}</a></p>\n  <div class="info">${infoBlocks.join('')}</div>\n  <div class="h2">\n    <div class="tracker-badges">\n      <span class="tracker-badge${isActiveTracker ? ' active' : ''}" data-tracker="${safeTrackerName}" data-tracker-label="${safeTrackerDisplay}" style="--tracker-color:${safeTrackerColor}" aria-label="${safeTrackerTooltip}" data-microtip-position="top" role="tooltip"><img class="trackerIco" src="${safeIco}" alt="${safeTrackerName}" loading="lazy" onerror="this.style.display='none'"></span>${trackerLabelMarkup}\n    </div>\n    <span class="webResultTitle">\n      <span class="stats-left">\n        ${filesIcon}\n        <span class="size">${r.sizeName}</span>\n        <span class="date">${r.dateHuman}</span>\n        <span class="seeders">⬆ ${seeders}</span>\n        <span class="leechers">⬇ ${leechers}</span>\n      </span>\n      <span class="actions-right">\n        <span class="magnet-controls"><span class="magnet"><a class="magneto ut-download-url" href="${safeMagnetHref}"></a></span><button type="button" class="magnet-copy-btn" ${magnetButtonAttrs} title="Скопировать magnet-ссылку" aria-label="Скопировать magnet-ссылку"></button></span>\n        <span class="torrserver-action"><a href="#" class="torrserver-send ts-inline-btn" title="Отправить в TorrServer" aria-label="Отправить в TorrServer"><img src="./img/torrserver.svg" alt="TorrServer" class="ts-inline-ico" /></a></span>\n      </span>\n    </span>\n  </div>\n</div>`;
   }
 
-  /** Render current filteredResults collection into #resultsDiv with summary. */
+  /**
+   * Render current filteredResults collection into #resultsDiv with summary
+   *
+   * Sorts results by selected criteria, builds HTML with staggered animation
+   * delays, and displays results summary. Handles empty state gracefully.
+   */
   function render() {
     clearResults();
+
+    // Get sort preference from localStorage (default: by seeders)
     const sortKey = lsGet('sort') || 'sid';
+
+    // Sort filtered results in descending order (highest values first)
     filteredResults.sort((a, b) =>
       a[sortKey] < b[sortKey] ? 1 : a[sortKey] > b[sortKey] ? -1 : 0
     );
+
+    // Show "no results" message if nothing to display
     if (!filteredResults.length) {
       showOnly($noresults);
       return;
     }
-    const html = filteredResults.map(buildItem).join('\n');
+
+    // Build HTML with staggered animation delays for smooth visual effect
+    // Each card gets a CSS variable and animation delay based on its index
+    const animateResults = !isSafari && filteredResults.length <= 200;
+    const html = filteredResults
+      .map((r, idx) => {
+        const itemHtml = buildItem(r);
+        if (!animateResults) {
+          return itemHtml;
+        }
+        // Inject CSS variables for staggered animation (30ms delay per card)
+        return itemHtml.replace(
+          /(<div class="webResult[^"]*")/,
+          `$1 style="--result-index: ${idx}; animation-delay: ${idx * 0.03}s"`
+        );
+      })
+      .join('\n');
+
     $results.html(html);
     $resultsSummary.text(`Найдено: ${filteredResults.length} / Всего: ${allResults.length}`).show();
+
+    // Force reflow to trigger CSS animations (read offsetHeight to flush layout)
+    if (animateResults && $results[0]) {
+      void $results[0].offsetHeight;
+    }
   }
 
-  /* ---------------------- Filters ---------------------- */
-  /** Reset all filter UI controls to their default placeholder values. */
+  /* ========================================================================
+   * FILTERS
+   * ======================================================================== */
+
+  /**
+   * Reset all filter UI controls to their default values
+   *
+   * Clears text inputs and resets select dropdowns to first option ("Любой"/"Любая")
+   */
   function resetFilter() {
     $('[name="type"],[name="refine"],[name="exclude"]', $filterBox).val('');
     $(
@@ -157,17 +405,48 @@
     });
   }
 
-  /** Populate a named <select> with ordered option list (first becomes default). */
-  function populateSelect(name, values) {
+  /**
+   * Populate a named <select> dropdown with option values
+   *
+   * Empties the select, adds all values as options, and selects the first one.
+   *
+   * @param {string} name - Filter name (matches name attribute in HTML)
+   * @param {Array<string>} values - Array of option values to populate
+   */
+  function populateSelect(name, values, labelMap) {
     const $sel = $('[name="' + name + '"]', $filterBox).empty();
-    values.forEach((v) => $sel.append(`<option value="${v}">${v}</option>`));
-    $sel.val(values[0]);
+    values.forEach((v) => {
+      const value = v != null ? String(v) : '';
+      const useMappedLabel = labelMap && Object.prototype.hasOwnProperty.call(labelMap, value);
+      const label = useMappedLabel ? labelMap[value] : v;
+      const safeValue = escapeAttribute(value);
+      const safeLabel = escapeHtml(label != null ? String(label) : '');
+      $sel.append(`<option value="${safeValue}">${safeLabel}</option>`);
+    });
+    if (values.length) {
+      const firstVal = values[0] != null ? String(values[0]) : '';
+      $sel.val(firstVal);
+    }
   }
 
-  /** Extract distinct facet values from full result set and seed filter selects. */
+  /**
+   * Extract distinct facet values from allResults and populate filter dropdowns
+   *
+   * Scans all search results to collect unique values for each filter dimension:
+   * - Voices (voice-over options)
+   * - Trackers (tracker identifiers)
+   * - Years (release years)
+   * - Seasons (season numbers for TV series)
+   * - Categories (content types)
+   * - Quality (video quality levels)
+   *
+   * Values are sorted and prepended with "Любой"/"Любая" option, then used
+   * to populate corresponding <select> dropdowns in the filter UI.
+   */
   function initFilterLists() {
     filterCache.voice = ['Любая'];
     filterCache.tracker = ['Любой'];
+    filterCache.trackerLabels = { Любой: 'Любой' };
     const years = [];
     const seasons = [];
     const types = [];
@@ -177,7 +456,12 @@
       (r.voices || []).forEach((v) => {
         if (!filterCache.voice.includes(v)) filterCache.voice.push(v);
       });
-      if (!filterCache.tracker.includes(r.tracker)) filterCache.tracker.push(r.tracker);
+      const trackerLabel = typeof r.tracker === 'string' ? r.tracker : '';
+      const normalizedTracker = normalizeTrackerName(trackerLabel);
+      if (!filterCache.tracker.includes(normalizedTracker)) {
+        filterCache.tracker.push(normalizedTracker);
+        filterCache.trackerLabels[normalizedTracker] = trackerLabel.trim() || normalizedTracker;
+      }
       if (r.relased && !years.includes(r.relased)) years.push(r.relased);
       if (r.quality && !quality.includes(r.quality)) quality.push(r.quality);
       (r.seasons || []).forEach((s) => {
@@ -198,19 +482,36 @@
     filterCache.quality = ['Любое', ...quality];
 
     populateSelect('voice', filterCache.voice);
-    populateSelect('tracker', filterCache.tracker);
+    populateSelect('tracker', filterCache.tracker, filterCache.trackerLabels);
     populateSelect('year', filterCache.year);
     populateSelect('season', filterCache.season);
     populateSelect('category', filterCache.category);
     populateSelect('quality', filterCache.quality);
   }
 
-  /** Apply active filter criteria to allResults producing filteredResults. */
+  /**
+   * Apply active filter criteria to allResults, producing filteredResults
+   *
+   * Implements a multi-dimensional filter system where:
+   * - All active filters must pass (AND logic)
+   * - If no filters are active, all results pass
+   * - Filter criteria include: quality, type, tracker, voice, category, season, year
+   * - Text filters: refine (must contain) and exclude (must not contain)
+   *
+   * Filter logic:
+   * 1. If any filter is active (any = true):
+   *    - Result must pass all active filters (pass = true)
+   *    - If any filter fails, result is excluded (fail = true)
+   * 2. If no filters active: all results pass
+   *
+   * @returns {void} - Updates filteredResults array
+   */
   function applyFilters() {
     filteredResults = allResults.filter((r) => {
-      let pass = false,
-        any = false,
-        fail = false;
+      // Track filter evaluation state
+      let pass = false; // Result passed at least one filter
+      let any = false; // Any filter is active
+      let fail = false; // Result failed at least one filter
       const quality = $('[name="quality"]', $filterBox).val();
       const type = $('[name="type"]', $filterBox).val();
       const year = $('[name="year"]', $filterBox).val();
@@ -243,7 +544,8 @@
         else fail = true;
       }
       if (tracker !== 'Любой') {
-        if (r.tracker == tracker) pass = true;
+        const normalizedTracker = normalizeTrackerName(r.tracker);
+        if (normalizedTracker === tracker) pass = true;
         else fail = true;
       }
       if (voice !== 'Любая') {
@@ -271,17 +573,30 @@
         else fail = true;
       }
 
+      // Final decision: if any filters active, result must pass all (AND logic)
       if (any) {
-        if (fail) return false;
-        return pass;
+        if (fail) return false; // Exclude if any filter failed
+        return pass; // Include only if all filters passed
       }
+      // No filters active: include all results
       return true;
     });
   }
 
-  /* ---------------------- API Key Handling ---------------------- */
-  // API key handling now centralized in modal.apikey.js (global ApiKey)
-  /** Ensure any required API key is available before executing callback. */
+  /* ========================================================================
+   * API KEY HANDLING
+   * ======================================================================== */
+
+  /**
+   * Ensure API key is available before executing callback
+   *
+   * Delegates to modal.apikey.js module which handles:
+   * - Checking if API key is required
+   * - Validating existing key
+   * - Prompting user for key if needed
+   *
+   * @param {Function} cb - Callback to execute after key validation
+   */
   function obtainKey(cb) {
     if (window.ApiKey) {
       window.ApiKey.ensure(cb);
@@ -290,8 +605,26 @@
     }
   }
 
-  /* ---------------------- Search ---------------------- */
-  /** Read persisted query + execute search request (with key) then hydrate UI. */
+  /* ========================================================================
+   * SEARCH
+   * ======================================================================== */
+
+  /**
+   * Read persisted query and execute search request, then hydrate UI
+   *
+   * Main search orchestration function that:
+   * 1. Reads search query from localStorage
+   * 2. Clears previous results and resets filters
+   * 3. Ensures API key is available (if required)
+   * 4. Makes API request to /api/torrents
+   * 5. Processes results and populates filters
+   * 6. Renders results with staggered animations
+   *
+   * Error handling:
+   * - 403: API key issue (handled by modal.apikey.js)
+   * - Timeout: Network timeout message
+   * - Other: Generic network error message
+   */
   function performSearch() {
     const query = lsGet('search');
     clearResults();
@@ -321,29 +654,47 @@
         encodeURIComponent(query) +
         keyParam +
         (lsGet('exact') == '1' ? '&exact=true' : '');
-      $.ajax({ dataType: 'json', url, cache: false })
+      $.ajax({
+        dataType: 'json',
+        url,
+        cache: false,
+        timeout: 30000, // 30 second timeout
+      })
         .done((json) => {
           if (Array.isArray(json) && json.length) {
+            // Process results: add date formatting and timestamps
             allResults = json.map((r) => {
               const d = new Date(r.createTime);
-              r.date = d.getTime();
-              r.dateHuman = fmtDate(d);
+              r.date = d.getTime(); // Epoch timestamp for sorting
+              r.dateHuman = fmtDate(d); // Human-readable date string
               return r;
             });
+
+            // Initialize filter dropdowns with unique values from results
             initFilterLists();
+
+            // Apply current filters (if any) to get filteredResults
             applyFilters();
+
+            // Render filtered results with staggered animations
             render();
+
+            // Show filter panel now that we have results
             $filterBox.show();
-            showOnly(null);
+            showOnly(null); // Hide all message states
           } else {
+            // No results found
             showOnly($noresults);
           }
         })
-        .fail((xhr) => {
+        .fail((xhr, textStatus, errorThrown) => {
+          console.error('Search failed:', { status: xhr?.status, textStatus, errorThrown });
           if (xhr && xhr.status === 403) {
             $noresults.text('Доступ запрещён: неверный или отсутствующий API ключ').show();
+          } else if (textStatus === 'timeout') {
+            $noresults.text('Превышено время ожидания. Попробуйте снова.').show();
           } else {
-            showOnly($noresults);
+            $noresults.text('Ошибка поиска. Проверьте подключение к интернету.').show();
           }
         })
         .always(() => {
@@ -353,7 +704,11 @@
     });
   }
 
-  /* ---------------------- Event Wiring ---------------------- */
+  /* ========================================================================
+   * EVENT WIRING
+   * ======================================================================== */
+
+  // Search form submission
   $form.on('submit', function (e) {
     e.preventDefault();
     lsSet('search', $input.val());
@@ -361,25 +716,40 @@
   });
   if (lsGet('search')) $input.val(lsGet('search'));
 
+  /**
+   * Apply sorting and update UI
+   *
+   * Saves sort preference to localStorage and re-renders results.
+   * Also announces sort change for screen readers via aria-live region.
+   *
+   * @param {string} value - Sort key ('sid', 'size', or 'date')
+   */
   function applySort(value) {
     lsSet('sort', value);
     if (filteredResults.length) render();
-    // Accessibility announcement
+
+    // Accessibility: Announce sort change to screen readers
     try {
       const live = document.getElementById('liveAnnounce');
       if (live) {
         const labelMap = { sid: 'по количеству сидов', size: 'по размеру', date: 'по дате' };
         // Force text node replacement to trigger aria-live even if same string rapidly
-        live.textContent = 'Сортировка: ' + (labelMap[value] || value);
+        const message = 'Сортировка: ' + (labelMap[value] || value);
+        live.textContent = message;
+        // Also update page title for screen readers
+        document.title = `${message} - Поиск торрентов`;
       }
     } catch (e) {
-      /* noop */
+      console.warn('Accessibility announcement failed:', e);
     }
   }
+  // Sort radio button change handler
   $('input[type=radio][name=sort]').on('change', function () {
     applySort(this.value);
   });
-  // Provide immediate visual + functional response on first touch (some mobile browsers delay click)
+
+  // Mobile optimization: Provide immediate response on touchstart/pointerdown
+  // Some mobile browsers delay click events by 300ms, causing perceived lag
   $('#searchInContainer').on(
     'touchstart pointerdown',
     'input[type=radio][name=sort]',
@@ -391,7 +761,9 @@
       }
     }
   );
-  // Extra iOS Edge / Safari safeguard: touch on label triggers immediate change.
+
+  // iOS-specific optimization: Handle label taps directly
+  // iOS Safari sometimes misses change events when labels are tapped quickly
   const isIOS = /iP(ad|hone|od)/.test(navigator.userAgent);
   if (isIOS) {
     $('#searchInContainer').on('touchstart', 'label[for^="sort"]', function (e) {
@@ -404,6 +776,12 @@
       }
     });
   }
+  /**
+   * Update visual active state for sort radio buttons
+   *
+   * Adds 'active' class to the wrapper of the currently checked sort option
+   * for visual feedback (highlighted border/background).
+   */
   function updateSortActive() {
     const val = $('input[type=radio][name=sort]:checked').val();
     $('#searchInContainer .icheck-material-cyan').removeClass('active');
@@ -421,18 +799,21 @@
     performSearch();
   });
 
-  // Filter events
+  // Filter change events: immediately apply filters and re-render
   $('select,input', $filterBox).on('change', function () {
     applyFilters();
     render();
   });
+
+  // Debounced input filtering: wait 200ms after user stops typing
+  // Prevents excessive filtering while user is still typing
   let keyupTimer;
   $('input', $filterBox).on('keyup', function () {
     clearTimeout(keyupTimer);
     keyupTimer = setTimeout(() => {
       applyFilters();
       render();
-    }, 200);
+    }, 200); // 200ms debounce delay
   });
   $('.filter-button', $filterBox).on('click', function () {
     resetFilter();
@@ -440,94 +821,235 @@
     render();
   });
 
-  // Delegated event for file toggles
+  // Event delegation: File list toggle (works for dynamically rendered results)
   $results.on('click', 'span.files[data-files]', function () {
     $(this).closest('.webResult').find('.info > .files').toggleClass('show');
   });
 
-  // Click-to-filter by tracker badge
+  // Event delegation: Copy magnet link to clipboard
+  $results.on('click', '.magnet-copy-btn', function (e) {
+    e.preventDefault();
+    const $btn = $(this);
+    if ($btn.is(':disabled')) return;
+
+    const encoded = $btn.attr('data-magnet') || '';
+    const magnet = encoded ? decodeURIComponent(encoded) : '';
+
+    function showFeedback(state) {
+      const message = state === 'success' ? 'Скопировано' : 'Не удалось скопировать';
+      const cls = state === 'success' ? 'copied' : 'copy-error';
+      const existingTimeout = $btn.data('feedbackTimeout');
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+      $btn.removeClass('copied copy-error');
+      $btn.addClass(cls);
+      $btn.attr('data-feedback', message);
+      const timeoutId = setTimeout(() => {
+        $btn.removeClass('copied copy-error');
+        $btn.removeAttr('data-feedback');
+        $btn.removeData('feedbackTimeout');
+      }, 2000);
+      $btn.data('feedbackTimeout', timeoutId);
+    }
+
+    function fallbackCopy() {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = magnet;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showFeedback(successful ? 'success' : 'error');
+      } catch (err) {
+        console.warn('Fallback clipboard copy failed:', err);
+        showFeedback('error');
+      }
+    }
+
+    if (!magnet) {
+      showFeedback('error');
+      return;
+    }
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard
+        .writeText(magnet)
+        .then(() => showFeedback('success'))
+        .catch((err) => {
+          console.warn('Clipboard API failed:', err);
+          fallbackCopy();
+        });
+    } else {
+      fallbackCopy();
+    }
+  });
+
+  /**
+   * Click-to-filter by tracker badge
+   *
+   * When user clicks a tracker badge:
+   * - If tracker is already filtered: clear tracker filter
+   * - Otherwise: apply tracker filter and show visual feedback (pulse animation)
+   *
+   * Uses event delegation for dynamically rendered results.
+   */
   $results.on('click', '.tracker-badge', function (e) {
     e.preventDefault();
     const tr = $(this).data('tracker');
+    const label = $(this).attr('data-tracker-label') || tr;
     const $sel = $('[name="tracker"]', $filterBox);
     const cur = $sel.val();
     if (cur === tr) {
       $sel.val('Любой');
     } else {
       if (!$('option[value="' + tr + '"]', $sel).length) {
-        $sel.append('<option value="' + tr + '">' + tr + '</option>');
+        const safeValue = escapeAttribute(String(tr));
+        const safeLabel = escapeHtml(String(label));
+        $sel.append('<option value="' + safeValue + '">' + safeLabel + '</option>');
+        filterCache.trackerLabels[tr] = label;
       }
       $sel.val(tr);
     }
     applyFilters();
     render();
+
+    // Visual feedback: pulse animation on clicked badge
     const el = $(this);
     el.addClass('pulse');
     setTimeout(() => el.removeClass('pulse'), 400);
   });
 
-  // Initial search
+  // Initialize: Perform search on page load if query exists in localStorage
   performSearch();
 
-  /* ---------------------- Last Update (DB) ---------------------- */
+  /* ========================================================================
+   * LAST UPDATE (DATABASE)
+   * ======================================================================== */
+
+  /**
+   * Initialize last database update display
+   *
+   * Fetches and displays when the database was last updated.
+   * Updates every 5 minutes to catch server-side updates.
+   * Uses AbortSignal for timeout handling (10s).
+   */
   (function initLastUpdate() {
     const el = document.getElementById('lastUpdateDb');
     if (!el) return;
     function apply(text) {
       if (!text) return;
       // Basic sanity: expect something like DD.MM.YYYY HH:MM
-      if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(text.trim())) {
-        el.textContent = 'Последнее обновление базы: ' + text.trim();
+      const trimmed = text.trim();
+      if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(trimmed)) {
+        el.textContent = 'Последнее обновление базы: ' + trimmed;
+        el.setAttribute('aria-label', `База данных обновлена ${trimmed}`);
       } else {
-        el.textContent = 'Последнее обновление базы: ' + text.trim();
+        el.textContent = 'Последнее обновление базы: ' + trimmed;
       }
     }
     function load() {
-      fetch('/lastupdatedb', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.text() : Promise.reject()))
+      const supportsAbort = typeof AbortController === 'function';
+      const controller = supportsAbort ? new AbortController() : null;
+      const timeoutId = supportsAbort
+        ? setTimeout(() => {
+            try {
+              controller.abort();
+            } catch (abortErr) {
+              console.warn('Failed to abort fetch:', abortErr);
+            }
+          }, 10000)
+        : null; // 10 second timeout
+      const fetchOptions = { cache: 'no-store' };
+      if (controller) {
+        fetchOptions.signal = controller.signal;
+      }
+
+      fetch('/lastupdatedb', fetchOptions)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.text();
+        })
         .then(apply)
-        .catch(() => {
-          /* silent */
+        .catch((err) => {
+          if (err && err.name === 'AbortError') {
+            console.warn('Last update request timed out after 10s.');
+          } else {
+            console.warn('Failed to fetch last update:', err);
+          }
+        })
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
         });
     }
     load();
-    // Refresh every 5 minutes (server might update periodically)
+    // Auto-refresh every 5 minutes (server may update database periodically)
     setInterval(load, 5 * 60 * 1000);
   })();
 
-  /* ---------------------- Back To Top ---------------------- */
+  /* ========================================================================
+   * BACK TO TOP BUTTON
+   * ======================================================================== */
+
+  /**
+   * Initialize scroll-to-top button
+   *
+   * Shows button when user scrolls past threshold (90px on small screens,
+   * 160px on larger screens). Uses requestAnimationFrame for smooth scroll
+   * detection. Handles iOS rubber-banding edge cases.
+   */
   (function initBackToTop() {
     const $btn = $('#back-to-top');
     if (!$btn.length) return;
     const smallScreen =
       window.matchMedia('(max-height:700px)').matches ||
       window.matchMedia('(max-width:640px)').matches;
+    // Adaptive threshold: lower on small screens for better UX
     const threshold = smallScreen ? 90 : 160;
-    let visible = false;
-    let rafId = null;
+    let visible = false; // Current visibility state
+    let rafId = null; // RequestAnimationFrame ID for throttling
 
+    /**
+     * Get current scroll position (cross-browser compatible)
+     * @returns {number} - Scroll position in pixels
+     */
     function currentScrollTop() {
       return (
         window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0
       );
     }
 
+    /**
+     * Evaluate scroll position and update button visibility
+     * Called via requestAnimationFrame for smooth performance
+     */
     function evaluate() {
       rafId = null;
       const st = currentScrollTop();
       const shouldShow = st > threshold;
+
+      // Only update DOM if state changed (prevents unnecessary reflows)
       if (shouldShow !== visible) {
         $btn.toggleClass('show', shouldShow);
         visible = shouldShow;
       }
     }
 
+    /**
+     * Scroll event handler (throttled via requestAnimationFrame)
+     * Prevents multiple concurrent evaluations
+     */
     function onScroll() {
-      if (rafId) return;
+      if (rafId) return; // Already scheduled
       rafId = requestAnimationFrame(evaluate);
     }
 
-    // For iOS reliability always use scroll listener; IntersectionObserver sometimes misses when the top is rubber-banded.
+    // iOS reliability: Always use scroll listener for rubber-banding edge cases
+    // IntersectionObserver can miss updates when Safari rubber-bands at page top
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('touchmove', onScroll, { passive: true });
     window.addEventListener('orientationchange', () => setTimeout(evaluate, 150));
@@ -544,9 +1066,17 @@
     });
   })();
 
-  /* ---------------------- Mobile Touch Enhancements ---------------------- */
-  // Some mobile browsers occasionally miss the change event when quickly tapping labels;
-  // delegate label taps to force a change + re-render.
+  /* ========================================================================
+   * MOBILE TOUCH ENHANCEMENTS
+   * ======================================================================== */
+
+  /**
+   * Mobile touch optimization: Handle label taps directly
+   *
+   * Some mobile browsers occasionally miss change events when labels are
+   * tapped quickly. This ensures the radio button state updates immediately
+   * and triggers change event.
+   */
   $('#searchInContainer').on('click', 'label[for^="sort"]', function () {
     const id = $(this).attr('for');
     const $radio = $('#' + id);

@@ -1,12 +1,14 @@
-name = "cf-jacred-jfd"              # Pages project name
+name = "cf-jacred-fdb"              # Pages project name
 pages_build_output_dir = "./dist"  # Build output now in ./dist
 compatibility_date = "2025-09-23"  # Keep pinned; update intentionally
 
 # Inheritable / non-inheritable bindings
 # [vars]
-# UPSTREAM_ORIGIN = ""  # Default (production + local dev) upstream API origin
-# API_KEY = ""          # Optional: set to a single key or comma-separated keys to require auth
-# ERROR_LOCALE = "en"   # Optional: externalize to JSON per locale
+# API_KEY = ""                  # Optional: set to a single key or comma-separated keys to require auth
+# CF_ACCESS_CLIENT_ID = ""      # Optional: Used for Cloudflare Access authentication (Client ID)
+# CF_ACCESS_CLIENT_SECRET = ""  # Optional: Used for Cloudflare Access authentication (Client Secret)
+# ERROR_LOCALE = "en"           # Optional: externalize to JSON per locale
+# UPSTREAM_ORIGIN = ""          # Default (production + local dev) upstream API origin
 
 # Source maps: set true if you want improved stack traces in logs for _worker.js
 upload_source_maps = true
@@ -16,4 +18,4 @@ upload_source_maps = true
 mode = "off"
 
 # Telemetry opt-out example:
-send_metrics = true
+send_metrics = false
