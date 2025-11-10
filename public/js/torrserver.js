@@ -15,29 +15,37 @@
  *
  * Secure Storage Strategy
  *   - URL and username: Stored in localStorage (non-sensitive data)
- *   - Password: Stored securely using Web Crypto API encryption
- *     - Passwords are encrypted with AES-GCM using a key derived from origin
+ *   - Password: Stored with at-rest obfuscation using Web Crypto API
+ *     - Passwords are obfuscated with AES-GCM using a predictable origin-derived key
+ *     - WARNING: This encryption only prevents casual inspection and does NOT protect
+ *       against determined attackers. The encryption key is derived from the origin
+ *       (predictable) and can be easily reconstructed by any code running on the same
+ *       origin. This is obfuscation, not real security.
  *     - Falls back to session memory if Web Crypto API is unavailable
  *     - Storage location depends on persistPassword preference:
  *       - If persistPassword=false (default): sessionStorage (cleared when tab closes)
  *       - If persistPassword=true: localStorage (persists across sessions)
- *     - Both storage methods use the same encryption (AES-GCM with PBKDF2)
+ *     - Both storage methods use the same obfuscation (AES-GCM with PBKDF2)
  *   - Configuration key: LS_KEY = 'torrserver_conf_v1'
  *
  * Exposed Global API
  *   TorrServer.openSettings()   : open modal for updating configuration
  *   TorrServer.sendMagnet(magn) : programmatically add magnet respecting current mode
  *   TorrServer.getConf()        : return current config object (without password)
- *   TorrServer.getConfWithPassword() : return config with password from secure storage
- *   TorrServer.clearPassword(url, username)  : clear password from secure storage
+ *   TorrServer.getConfWithPassword() : return config with password from obfuscated storage
+ *   TorrServer.clearPassword(url, username)  : clear password from obfuscated storage
  *
  * Security Implementation
- *   - Passwords are encrypted using Web Crypto API (AES-GCM with PBKDF2 key derivation)
- *     before storing, providing secure client-side encryption
- *   - Encryption key is derived from the current origin using PBKDF2 with 100,000 iterations
+ *   - Passwords are obfuscated using Web Crypto API (AES-GCM with PBKDF2 key derivation)
+ *     before storing. This provides at-rest obfuscation only.
+ *   - WARNING: The encryption key is derived from the current origin (predictable) using
+ *     PBKDF2 with 100,000 iterations. This does NOT provide real security - any code
+ *     running on the same origin can reconstruct the key and decrypt passwords.
+ *     This is obfuscation to prevent casual inspection, NOT protection against
+ *     determined attackers.
  *   - Storage location: sessionStorage (default, cleared when tab closes) or localStorage (if persistPassword=true)
  *   - If Web Crypto API is unavailable, passwords fall back to plain session memory
- *   - Session memory passwords are cleared on page reload for security
+ *   - Session memory passwords are cleared on page reload
  *   - Basic Auth header is built only when both username and password are provided
  *   - All URL inputs are validated to ensure proper format (http:// or https://)
  *   - Each password is stored with a unique key based on URL + username combination
@@ -126,8 +134,10 @@
 
   /**
    * Derive an encryption key from the current origin and a constant salt.
-   * This provides basic encryption for password storage in sessionStorage.
-   * Note: This is not as secure as server-side encryption but better than plain text.
+   * WARNING: This provides at-rest obfuscation only, NOT real security.
+   * The key is predictable (derived from origin) and can be easily reconstructed
+   * by any code running on the same origin. This prevents casual inspection but
+   * does NOT protect against determined attackers.
    *
    * @returns {Promise<CryptoKey>} Encryption key for AES-GCM
    */
@@ -238,7 +248,7 @@
 
   /**
    * Load non-sensitive configuration from localStorage.
-   * Password is NOT loaded from storage - use getPassword() to retrieve it securely.
+   * Password is NOT loaded from storage - use getPassword() to retrieve it from obfuscated storage.
    *
    * @returns {Object} Configuration object with url, username, direct, persistPassword (password always empty)
    */
@@ -263,7 +273,7 @@
 
   /**
    * Save only non-sensitive configuration to localStorage.
-   * Password is NOT saved here - use setPassword() to store securely.
+   * Password is NOT saved here - use setPassword() to store in obfuscated storage.
    *
    * @param {Object} c - Configuration object with url, username, direct, persistPassword
    */
@@ -339,9 +349,10 @@
   }
 
   /**
-   * Retrieve password from secure storage (encrypted storage or session memory).
-   * Uses Web Crypto API to decrypt passwords when available.
-   * Falls back to session memory if encryption is unavailable.
+   * Retrieve password from obfuscated storage or session memory.
+   * Uses Web Crypto API to decrypt obfuscated passwords when available.
+   * WARNING: The encryption is predictable (origin-derived) and provides obfuscation only,
+   * not real security. Falls back to session memory if encryption is unavailable.
    *
    * @param {string} url - TorrServer URL
    * @param {string} username - Username (optional)
@@ -387,9 +398,10 @@
   }
 
   /**
-   * Store password securely using encrypted storage (sessionStorage or localStorage) or session memory.
-   * Uses Web Crypto API to encrypt passwords before storing when available.
-   * Falls back to session memory if encryption is unavailable.
+   * Store password using obfuscated storage (sessionStorage or localStorage) or session memory.
+   * Uses Web Crypto API to obfuscate passwords before storing when available.
+   * WARNING: The encryption is predictable (origin-derived) and provides obfuscation only,
+   * not real security. Falls back to session memory if encryption is unavailable.
    *
    * @param {string} url - TorrServer URL
    * @param {string} username - Username (optional)
@@ -483,14 +495,14 @@
   }
 
   /**
-   * Clear password from both session memory and encrypted storage (sessionStorage and localStorage).
+   * Clear password from both session memory and obfuscated storage (sessionStorage and localStorage).
    * This ensures passwords are completely removed from all storage locations.
    *
    * @param {string} url - TorrServer URL (optional, if provided clears specific credential)
    * @param {string} username - Username (optional, if provided clears specific credential)
    */
   function clearPassword(url, username) {
-    // Clear encrypted password from both storages if URL and username provided
+    // Clear obfuscated password from both storages if URL and username provided
     if (url && username) {
       const storageKey = getPasswordStorageKey(url, username);
       // Clear from session memory cache
@@ -525,7 +537,7 @@
 
   /**
    * Show the settings modal and populate it with current configuration.
-   * Retrieves password from secure storage (encrypted sessionStorage or session memory).
+   * Retrieves password from obfuscated storage or session memory.
    *
    * @returns {Promise<boolean>} Promise that resolves to true if settings were saved, false if cancelled
    */
@@ -534,7 +546,7 @@
     const c = loadConf();
     $('#tsUrl').val(c.url);
     $('#tsUser').val(c.username);
-    // Retrieve password from secure storage (encrypted storage or session memory)
+    // Retrieve password from obfuscated storage or session memory
     const pwd = await getPassword(c.url, c.username, c.persistPassword);
     $('#tsPass').val(pwd);
     $('#tsDirect').prop('checked', !!c.direct);
@@ -584,7 +596,7 @@
   /**
    * Submit the settings modal form.
    * Validates URL format, saves non-sensitive data to localStorage,
-   * and stores password securely using encrypted storage.
+   * and stores password using obfuscated storage.
    */
   async function submitModal() {
     const url = $('#tsUrl').val().trim();
@@ -603,7 +615,7 @@
     $('#tsUrl').attr('aria-invalid', 'false');
     // Save only non-sensitive data (url, username, direct, persistPassword) to localStorage
     saveConf({ url, username, direct, persistPassword });
-    // Store password securely using encrypted storage (localStorage or sessionStorage based on preference)
+    // Store password using obfuscated storage (localStorage or sessionStorage based on preference)
     await setPassword(url, username, password, persistPassword);
     closeModal(true);
   }
@@ -658,7 +670,7 @@
   /**
    * Send magnet link directly to user-specified TorrServer (browser -> server).
    * Uses direct mode, bypassing the Cloudflare worker proxy.
-   * Retrieves password from secure storage (encrypted sessionStorage or session memory).
+   * Retrieves password from obfuscated storage or session memory.
    *
    * @param {string} magnet - Magnet link to send
    * @param {Object} conf - Configuration object with url, username
@@ -667,7 +679,7 @@
     const debug = !!localStorage.getItem('torrserver_debug');
     const base = conf.url.replace(/\/$/, '');
     const addUrl = base + '/torrents';
-    // Retrieve password from secure storage (encrypted storage or session memory)
+    // Retrieve password from obfuscated storage or session memory
     const password = await getPassword(conf.url, conf.username, conf.persistPassword);
     const auth =
       conf.username && password
@@ -725,7 +737,7 @@
   /**
    * Entry point for UI buttons: sends magnet link to TorrServer.
    * Chooses between proxy mode (default) and direct mode based on configuration.
-   * Retrieves password from secure storage (encrypted sessionStorage or session memory).
+   * Retrieves password from obfuscated storage or session memory.
    *
    * @param {string} magnet - Magnet link to send
    */
@@ -735,7 +747,7 @@
       openSettings();
       return;
     }
-    // Retrieve password from secure storage (encrypted storage or session memory)
+    // Retrieve password from obfuscated storage or session memory
     const password = await getPassword(conf.url, conf.username, conf.persistPassword);
     if (conf.direct) {
       await directSend(magnet, { ...conf, password });
@@ -790,7 +802,7 @@
   /**
    * Test connection to TorrServer endpoint.
    * Validates the connection by sending a test request through the proxy.
-   * Uses password from the form input (not from secure storage) for testing.
+   * Uses password from the form input (not from obfuscated storage) for testing.
    */
   $(document).on('click', '#tsTest', async function () {
     const url = $('#tsUrl').val().trim();
@@ -834,9 +846,10 @@
   });
 
   /**
-   * Get full configuration including password from secure storage.
+   * Get full configuration including password from obfuscated storage.
    * This is a convenience method that combines loadConf() with getPassword().
-   * Retrieves password from encrypted sessionStorage or session memory.
+   * Retrieves password from obfuscated storage or session memory.
+   * WARNING: The encryption is predictable (origin-derived) and provides obfuscation only.
    *
    * @returns {Promise<Object>} Configuration object with url, username, password, direct
    */
