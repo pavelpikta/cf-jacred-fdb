@@ -59,8 +59,9 @@
     persistPassword: false,
   };
 
-  // Session-only password storage (not persisted)
-  let sessionPassword = '';
+  // Session-only password cache keyed by storage key (not persisted)
+  // Maps storageKey (from getPasswordStorageKey) to decrypted password
+  const sessionPasswordCache = new Map();
 
   function lsGet(k) {
     try {
@@ -348,18 +349,20 @@
    * @returns {Promise<string>} Password string (empty if not found)
    */
   async function getPassword(url, username, persistPassword) {
-    // First check session memory (fastest, no decryption needed)
-    if (sessionPassword) {
-      return sessionPassword;
-    }
-
     // If no URL or username, return empty
     if (!url || !username) {
       return '';
     }
 
-    // Try to retrieve encrypted password from storage
+    // Generate storage key for this credential set
     const storageKey = getPasswordStorageKey(url, username);
+
+    // First check session memory cache (fastest, no decryption needed)
+    if (sessionPasswordCache.has(storageKey)) {
+      return sessionPasswordCache.get(storageKey);
+    }
+
+    // Try to retrieve encrypted password from storage
     const encryptedPassword = getEncryptedPasswordFromStorage(storageKey, persistPassword);
 
     if (encryptedPassword) {
@@ -367,14 +370,16 @@
         // Decrypt the password
         const decryptedPassword = await decryptPassword(encryptedPassword);
         if (decryptedPassword) {
-          // Cache in session memory for faster access
-          sessionPassword = decryptedPassword;
+          // Cache in session memory for faster access, keyed by storage key
+          sessionPasswordCache.set(storageKey, decryptedPassword);
           return decryptedPassword;
         }
       } catch (e) {
         console.warn('Failed to decrypt password from storage:', e);
         // Remove corrupted encrypted password
         setEncryptedPasswordInStorage(storageKey, '', persistPassword);
+        // Clear from cache if present
+        sessionPasswordCache.delete(storageKey);
       }
     }
 
@@ -393,9 +398,6 @@
    * @returns {Promise<void>}
    */
   async function setPassword(url, username, password, persistPassword) {
-    // Always store in session memory for fast access
-    sessionPassword = password || '';
-
     // If no URL or username, we can't create a storage key
     if (!url || !username) {
       return;
@@ -403,11 +405,15 @@
 
     const storageKey = getPasswordStorageKey(url, username);
 
-    // If no password, clear storage and return
+    // If no password, clear storage and cache
     if (!password) {
       setEncryptedPasswordInStorage(storageKey, '', persistPassword);
+      sessionPasswordCache.delete(storageKey);
       return;
     }
+
+    // Always store in session memory cache for fast access, keyed by storage key
+    sessionPasswordCache.set(storageKey, password);
 
     // Try to encrypt and store
     try {
@@ -415,7 +421,7 @@
       setEncryptedPasswordInStorage(storageKey, encryptedPassword || '', persistPassword);
     } catch (e) {
       console.warn('Failed to encrypt and store password:', e);
-      // Password remains in session memory only
+      // Password remains in session memory cache only
       setEncryptedPasswordInStorage(storageKey, '', persistPassword);
     }
   }
@@ -484,12 +490,11 @@
    * @param {string} username - Username (optional, if provided clears specific credential)
    */
   function clearPassword(url, username) {
-    // Clear session memory
-    sessionPassword = '';
-
     // Clear encrypted password from both storages if URL and username provided
     if (url && username) {
       const storageKey = getPasswordStorageKey(url, username);
+      // Clear from session memory cache
+      sessionPasswordCache.delete(storageKey);
       // Clear from both storages regardless of preference
       try {
         sessionStorage.removeItem(storageKey);
@@ -498,7 +503,8 @@
         console.warn('Failed to clear password from storage:', e);
       }
     } else {
-      // Clear all torrserver passwords from both storages
+      // Clear all torrserver passwords from both storages and cache
+      sessionPasswordCache.clear();
       clearAllPasswordsFromStorage(sessionStorage);
       clearAllPasswordsFromStorage(localStorage);
     }
