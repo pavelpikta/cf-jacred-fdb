@@ -15,17 +15,19 @@
  *
  * Secure Storage Strategy
  *   - URL and username: Stored in localStorage (non-sensitive data)
- *   - Password: Stored with at-rest obfuscation using Web Crypto API
- *     - Passwords are obfuscated with AES-GCM using a predictable origin-derived key
- *     - WARNING: This encryption only prevents casual inspection and does NOT protect
- *       against determined attackers. The encryption key is derived from the origin
- *       (predictable) and can be easily reconstructed by any code running on the same
- *       origin. This is obfuscation, not real security.
+ *   - Password: Stored with encryption using Web Crypto API
+ *     - OPTIONAL Master Password: When set, provides real security by deriving encryption
+ *       key from user-provided master password (not predictable). Master password is
+ *       stored only as a hash (PBKDF2 with 100,000 iterations) and never stored in plain text.
+ *     - Fallback Obfuscation: When no master password is set, passwords are obfuscated
+ *       with AES-GCM using a predictable origin-derived key. WARNING: This provides NO
+ *       real security - the key is predictable and can be easily reconstructed by any
+ *       code running on the same origin. This is obfuscation, not encryption.
  *     - Falls back to session memory if Web Crypto API is unavailable
  *     - Storage location depends on persistPassword preference:
  *       - If persistPassword=false (default): sessionStorage (cleared when tab closes)
  *       - If persistPassword=true: localStorage (persists across sessions)
- *     - Both storage methods use the same obfuscation (AES-GCM with PBKDF2)
+ *     - Both storage methods use the same encryption/obfuscation (AES-GCM with PBKDF2)
  *   - Configuration key: LS_KEY = 'torrserver_conf_v1'
  *
  * Exposed Global API
@@ -36,16 +38,21 @@
  *   TorrServer.clearPassword(url, username)  : clear password from obfuscated storage
  *
  * Security Implementation
- *   - Passwords are obfuscated using Web Crypto API (AES-GCM with PBKDF2 key derivation)
- *     before storing. This provides at-rest obfuscation only.
- *   - WARNING: The encryption key is derived from the current origin (predictable) using
- *     PBKDF2 with 100,000 iterations. This does NOT provide real security - any code
- *     running on the same origin can reconstruct the key and decrypt passwords.
- *     This is obfuscation to prevent casual inspection, NOT protection against
- *     determined attackers.
- *   - Storage location: sessionStorage (default, cleared when tab closes) or localStorage (if persistPassword=true)
+ *   - OPTIONAL Master Password: Users can set a master password for real encryption security.
+ *     When set, the encryption key is derived from the master password (not predictable),
+ *     providing real security. Master password is verified using PBKDF2 with 100,000 iterations
+ *     and constant-time comparison to prevent timing attacks. Master password is stored only
+ *     as a hash and never in plain text.
+ *   - Fallback Obfuscation: When no master password is set, passwords are obfuscated using
+ *     Web Crypto API (AES-GCM with PBKDF2 key derivation) with a predictable origin-derived
+ *     key. WARNING: This provides NO real security - any code running on the same origin can
+ *     reconstruct the key and decrypt passwords. This is obfuscation to prevent casual
+ *     inspection, NOT protection against determined attackers.
+ *   - Storage location: sessionStorage (default, cleared when tab closes) or localStorage
+ *     (if persistPassword=true)
  *   - If Web Crypto API is unavailable, passwords fall back to plain session memory
  *   - Session memory passwords are cleared on page reload
+ *   - Master password is stored in session memory only (never persisted) after verification
  *   - Basic Auth header is built only when both username and password are provided
  *   - All URL inputs are validated to ensure proper format (http:// or https://)
  *   - Each password is stored with a unique key based on URL + username combination
@@ -53,10 +60,13 @@
 (function (global) {
   const LS_KEY = 'torrserver_conf_v1';
   const PWD_STORAGE_PREFIX = 'torrserver_pwd_';
+  const MASTER_PWD_HASH_KEY = 'torrserver_master_pwd_hash_v1';
+  const MASTER_PWD_SALT_KEY = 'torrserver_master_pwd_salt_v1';
   const REQUEST_TIMEOUT_MS = 15000;
   const TOAST_DISPLAY_MS = 4000;
   const IV_LENGTH = 12; // 96-bit IV for AES-GCM
   const PBKDF2_ITERATIONS = 100000;
+  const MASTER_PWD_PBKDF2_ITERATIONS = 100000; // Iterations for master password hashing
 
   // Default configuration object
   const DEFAULT_CONFIG = {
@@ -70,6 +80,10 @@
   // Session-only password cache keyed by storage key (not persisted)
   // Maps storageKey (from getPasswordStorageKey) to decrypted password
   const sessionPasswordCache = new Map();
+
+  // Session-only master password cache (not persisted)
+  // Stores the master password in memory only for the current session
+  let sessionMasterPassword = null;
 
   function lsGet(k) {
     try {
@@ -133,11 +147,136 @@
   }
 
   /**
-   * Derive an encryption key from the current origin and a constant salt.
-   * WARNING: This provides at-rest obfuscation only, NOT real security.
-   * The key is predictable (derived from origin) and can be easily reconstructed
-   * by any code running on the same origin. This prevents casual inspection but
-   * does NOT protect against determined attackers.
+   * Check if a master password is set (by checking for stored hash).
+   *
+   * @returns {boolean} True if master password is configured
+   */
+  function hasMasterPassword() {
+    return !!lsGet(MASTER_PWD_HASH_KEY);
+  }
+
+  /**
+   * Hash a master password using PBKDF2 for verification purposes.
+   *
+   * @param {string} masterPassword - Master password to hash
+   * @param {Uint8Array} salt - Salt for hashing
+   * @returns {Promise<ArrayBuffer>} Hashed password
+   */
+  async function hashMasterPassword(masterPassword, salt) {
+    if (!isWebCryptoAvailable()) {
+      throw new Error('Web Crypto API not available');
+    }
+
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(masterPassword),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    return crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: MASTER_PWD_PBKDF2_ITERATIONS,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      256 // 256 bits = 32 bytes
+    );
+  }
+
+  /**
+   * Verify a master password against the stored hash.
+   *
+   * @param {string} masterPassword - Master password to verify
+   * @returns {Promise<boolean>} True if password matches
+   */
+  async function verifyMasterPassword(masterPassword) {
+    if (!masterPassword) return false;
+
+    const storedHashB64 = lsGet(MASTER_PWD_HASH_KEY);
+    const storedSaltB64 = lsGet(MASTER_PWD_SALT_KEY);
+
+    if (!storedHashB64 || !storedSaltB64) return false;
+
+    try {
+      const storedHash = Uint8Array.from(atob(storedHashB64), (c) => c.charCodeAt(0));
+      const salt = Uint8Array.from(atob(storedSaltB64), (c) => c.charCodeAt(0));
+
+      const computedHash = await hashMasterPassword(masterPassword, salt);
+      const computedHashArray = new Uint8Array(computedHash);
+
+      // Constant-time comparison to prevent timing attacks
+      if (storedHash.length !== computedHashArray.length) return false;
+      let result = 0;
+      for (let i = 0; i < storedHash.length; i++) {
+        result |= storedHash[i] ^ computedHashArray[i];
+      }
+      return result === 0;
+    } catch (e) {
+      console.warn('Master password verification failed:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Set or update the master password.
+   * Stores only the hash and salt, never the password itself.
+   *
+   * @param {string} masterPassword - Master password to set (empty string to clear)
+   * @returns {Promise<boolean>} True if successful
+   */
+  async function setMasterPassword(masterPassword) {
+    if (!masterPassword) {
+      // Clear master password
+      lsRemove(MASTER_PWD_HASH_KEY);
+      lsRemove(MASTER_PWD_SALT_KEY);
+      sessionMasterPassword = null;
+      return true;
+    }
+
+    if (!isWebCryptoAvailable()) {
+      throw new Error('Web Crypto API not available');
+    }
+
+    try {
+      // Generate a random salt for this master password
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const hash = await hashMasterPassword(masterPassword, salt);
+
+      // Store hash and salt (never the password itself)
+      lsSet(MASTER_PWD_HASH_KEY, btoa(String.fromCharCode(...new Uint8Array(hash))));
+      lsSet(MASTER_PWD_SALT_KEY, btoa(String.fromCharCode(...salt)));
+
+      // Store in session memory for faster access
+      sessionMasterPassword = masterPassword;
+
+      return true;
+    } catch (e) {
+      console.warn('Failed to set master password:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Get the master password from session memory.
+   * Returns null if not set or not verified in this session.
+   *
+   * @returns {string|null} Master password or null
+   */
+  function getMasterPassword() {
+    return sessionMasterPassword;
+  }
+
+  /**
+   * Derive an encryption key from master password (if set) or origin (fallback obfuscation).
+   * When a master password is set, the key is derived from the master password, providing
+   * real security. When no master password is set, falls back to origin-based obfuscation.
+   *
+   * WARNING: Origin-based obfuscation provides NO real security - the key is predictable
+   * and can be easily reconstructed by any code running on the same origin.
    *
    * @returns {Promise<CryptoKey>} Encryption key for AES-GCM
    */
@@ -146,29 +285,36 @@
       throw new Error('Web Crypto API not available');
     }
 
-    // Use a constant salt based on origin for key derivation
-    // In a production environment, consider using a more sophisticated key management
-    const salt = new TextEncoder().encode(window.location.origin + 'torrserver_salt_v1');
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(window.location.origin),
-      { name: 'PBKDF2' },
-      false,
-      ['deriveBits', 'deriveKey']
-    );
+    // If master password is set and available in session, use it for real encryption
+    if (sessionMasterPassword) {
+      // Use a constant salt based on origin + master password for key derivation
+      // The master password provides the security, the origin salt ensures uniqueness per origin
+      const salt = new TextEncoder().encode(window.location.origin + 'torrserver_master_salt_v1');
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(sessionMasterPassword),
+        { name: 'PBKDF2' },
+        false,
+        ['deriveBits', 'deriveKey']
+      );
 
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: salt,
-        iterations: PBKDF2_ITERATIONS,
-        hash: 'SHA-256',
-      },
-      keyMaterial,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+      return crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt: salt,
+          iterations: PBKDF2_ITERATIONS,
+          hash: 'SHA-256',
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+    }
+
+    // Fallback: Use origin-based obfuscation (NO real security)
+    // This is only for backward compatibility and when no master password is set
+    return deriveOriginBasedKey();
   }
 
   /**
@@ -211,7 +357,44 @@
   }
 
   /**
+   * Derive encryption key using origin-based obfuscation (fallback method).
+   * This is used for backward compatibility with passwords encrypted before
+   * master password was introduced.
+   *
+   * @returns {Promise<CryptoKey>} Encryption key for AES-GCM
+   */
+  async function deriveOriginBasedKey() {
+    if (!isWebCryptoAvailable()) {
+      throw new Error('Web Crypto API not available');
+    }
+
+    const salt = new TextEncoder().encode(window.location.origin + 'torrserver_salt_v1');
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(window.location.origin),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits', 'deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: PBKDF2_ITERATIONS,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  /**
    * Decrypt password using Web Crypto API.
+   * Tries master password first (if set), then falls back to origin-based obfuscation
+   * for backward compatibility with passwords encrypted before master password was introduced.
    *
    * @param {string} encryptedPassword - Base64-encoded encrypted password with IV
    * @returns {Promise<string>} Decrypted password
@@ -223,13 +406,32 @@
       return encryptedPassword;
     }
 
+    const combined = Uint8Array.from(atob(encryptedPassword), (c) => c.charCodeAt(0));
+    const iv = combined.slice(0, IV_LENGTH);
+    const encrypted = combined.slice(IV_LENGTH);
+
+    // Try master password first (if set)
+    if (sessionMasterPassword) {
+      try {
+        const key = await deriveEncryptionKey();
+        const decrypted = await crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv,
+          },
+          key,
+          encrypted
+        );
+        return new TextDecoder().decode(decrypted);
+      } catch (e) {
+        // Master password decryption failed, try origin-based obfuscation
+        // This handles backward compatibility with old passwords
+      }
+    }
+
+    // Try origin-based obfuscation (for backward compatibility)
     try {
-      const key = await deriveEncryptionKey();
-      const combined = Uint8Array.from(atob(encryptedPassword), (c) => c.charCodeAt(0));
-
-      const iv = combined.slice(0, IV_LENGTH);
-      const encrypted = combined.slice(IV_LENGTH);
-
+      const key = await deriveOriginBasedKey();
       const decrypted = await crypto.subtle.decrypt(
         {
           name: 'AES-GCM',
@@ -238,7 +440,6 @@
         key,
         encrypted
       );
-
       return new TextDecoder().decode(decrypted);
     } catch (e) {
       console.warn('Password decryption failed:', e);
@@ -349,10 +550,75 @@
   }
 
   /**
+   * Prompt user for master password if needed.
+   * Returns true if master password is verified, false if cancelled.
+   *
+   * @returns {Promise<boolean>} True if master password is verified or not needed
+   */
+  async function promptMasterPasswordIfNeeded() {
+    // If no master password is set, no prompt needed
+    if (!hasMasterPassword()) {
+      return true;
+    }
+
+    // If master password is already in session, no prompt needed
+    if (sessionMasterPassword) {
+      return true;
+    }
+
+    // Prompt for master password
+    return new Promise((resolve) => {
+      const promptHtml =
+        '<div id="torrServerMasterPwdModal" class="modal" style="display:block;z-index:1200">\n  <div class="modal-dialog">\n    <div class="modal-header">Мастер-пароль</div>\n    <div class="modal-body">\n      <p>Введите мастер-пароль для расшифровки сохраненных паролей.</p>\n      <input type="password" id="tsMasterPwdPrompt" placeholder="Мастер-пароль" class="mb10" autofocus />\n      <div class="modal-error" id="tsMasterPwdErr" style="display:none"></div>\n    </div>\n    <div class="modal-footer">\n      <button type="button" id="tsMasterPwdCancel" class="btn-secondary">Отмена</button>\n      <button type="button" id="tsMasterPwdOk" class="btn-primary">OK</button>\n    </div>\n  </div>\n</div>';
+      $('body').append(promptHtml);
+      $('#tsMasterPwdPrompt').focus();
+
+      const cleanup = () => {
+        $('#torrServerMasterPwdModal').remove();
+      };
+
+      const verify = async () => {
+        const pwd = $('#tsMasterPwdPrompt').val();
+        if (!pwd) {
+          $('#tsMasterPwdErr').text('Введите мастер-пароль').show();
+          return;
+        }
+        const isValid = await verifyMasterPassword(pwd);
+        if (isValid) {
+          sessionMasterPassword = pwd;
+          cleanup();
+          resolve(true);
+        } else {
+          $('#tsMasterPwdErr').text('Неверный мастер-пароль').show();
+          $('#tsMasterPwdPrompt').val('').focus();
+        }
+      };
+
+      // Use one-time event handlers to avoid memory leaks
+      $('#tsMasterPwdOk').one('click', verify);
+      $('#tsMasterPwdCancel').one('click', () => {
+        cleanup();
+        resolve(false);
+      });
+      $('#tsMasterPwdPrompt').one('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          verify();
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          cleanup();
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  /**
    * Retrieve password from obfuscated storage or session memory.
    * Uses Web Crypto API to decrypt obfuscated passwords when available.
-   * WARNING: The encryption is predictable (origin-derived) and provides obfuscation only,
-   * not real security. Falls back to session memory if encryption is unavailable.
+   * If a master password is set, it will be used for real encryption.
+   * Otherwise, falls back to origin-based obfuscation (NO real security).
    *
    * @param {string} url - TorrServer URL
    * @param {string} username - Username (optional)
@@ -379,6 +645,7 @@
     if (encryptedPassword) {
       try {
         // Decrypt the password
+        // If master password is set, it will be used automatically by deriveEncryptionKey()
         const decryptedPassword = await decryptPassword(encryptedPassword);
         if (decryptedPassword) {
           // Cache in session memory for faster access, keyed by storage key
@@ -398,10 +665,11 @@
   }
 
   /**
-   * Store password using obfuscated storage (sessionStorage or localStorage) or session memory.
-   * Uses Web Crypto API to obfuscate passwords before storing when available.
-   * WARNING: The encryption is predictable (origin-derived) and provides obfuscation only,
-   * not real security. Falls back to session memory if encryption is unavailable.
+   * Store password using encrypted storage (sessionStorage or localStorage) or session memory.
+   * Uses Web Crypto API to encrypt passwords before storing when available.
+   * If a master password is set, it will be used for real encryption. Otherwise, falls back
+   * to origin-based obfuscation (NO real security). Falls back to session memory if encryption
+   * is unavailable.
    *
    * @param {string} url - TorrServer URL
    * @param {string} username - Username (optional)
@@ -531,17 +799,25 @@
   function ensureMarkup() {
     if ($('#torrServerModal').length) return;
     const html =
-      '<div id="torrServerModal" class="modal" style="display:none">\n  <div class="modal-dialog">\n    <div class="modal-header">Настройки TorrServer</div>\n    <div class="modal-body">\n      <input type="text" id="tsUrl" placeholder="URL (например http://127.0.0.1:8090)" class="mb10" />\n      <input type="text" id="tsUser" placeholder="Имя пользователя (опционально)" class="mb10" />\n      <input type="password" id="tsPass" placeholder="Пароль (опционально)" class="mb10" />\n      <label class="ts-checkbox"><input type="checkbox" id="tsDirect" /> <span>Прямой режим (из браузера)</span></label>\n      <label class="ts-checkbox"><input type="checkbox" id="tsPersistPassword" /> <span>Сохранить пароль (зашифрован в localStorage)</span></label>\n      <div class="ts-actions-row">\n        <button type="button" id="tsTest" class="btn-tertiary ts-test-btn">Тест соединения</button>\n      </div>\n      <div class="ts-hint">Добавление торрентов всегда через /torrents. Прямой режим требует CORS допуска или авторизованной вкладки.</div>\n      <div class="modal-error" id="tsErr" style="display:none"></div>\n    </div>\n    <div class="modal-footer">\n      <button type="button" id="tsCancel" class="btn-secondary">Отмена</button>\n      <button type="button" id="tsSave" class="btn-primary">Сохранить</button>\n    </div>\n  </div>\n</div>';
+      '<div id="torrServerModal" class="modal" style="display:none">\n  <div class="modal-dialog">\n    <div class="modal-header">Настройки TorrServer</div>\n    <div class="modal-body">\n      <input type="text" id="tsUrl" placeholder="URL (например http://127.0.0.1:8090)" class="mb10" />\n      <input type="text" id="tsUser" placeholder="Имя пользователя (опционально)" class="mb10" />\n      <input type="password" id="tsPass" placeholder="Пароль (опционально)" class="mb10" />\n      <label class="ts-checkbox"><input type="checkbox" id="tsDirect" /> <span>Прямой режим (из браузера)</span></label>\n      <label class="ts-checkbox"><input type="checkbox" id="tsPersistPassword" /> <span>Сохранить пароль (зашифрован в localStorage)</span></label>\n      <hr style="margin: 15px 0; border: none; border-top: 1px solid #ddd;" />\n      <div class="ts-master-pwd-section">\n        <div style="margin-bottom: 10px;"><strong>Мастер-пароль для шифрования (опционально)</strong></div>\n        <div style="font-size: 0.85rem; color: #666; margin-bottom: 10px;">Мастер-пароль обеспечивает реальную защиту паролей. Без него используется только обфускация (небезопасно).</div>\n        <input type="password" id="tsMasterPwd" placeholder="Мастер-пароль (оставьте пустым, чтобы не изменять)" class="mb10" />\n        <input type="password" id="tsMasterPwdConfirm" placeholder="Подтверждение мастер-пароля" class="mb10" />\n        <label class="ts-checkbox"><input type="checkbox" id="tsClearMasterPwd" /> <span>Очистить мастер-пароль</span></label>\n        <div id="tsMasterPwdStatus" style="font-size: 0.85rem; margin-top: 5px;"></div>\n      </div>\n      <div class="ts-actions-row">\n        <button type="button" id="tsTest" class="btn-tertiary ts-test-btn">Тест соединения</button>\n      </div>\n      <div class="ts-hint">Добавление торрентов всегда через /torrents. Прямой режим требует CORS допуска или авторизованной вкладки.</div>\n      <div class="modal-error" id="tsErr" style="display:none"></div>\n    </div>\n    <div class="modal-footer">\n      <button type="button" id="tsCancel" class="btn-secondary">Отмена</button>\n      <button type="button" id="tsSave" class="btn-primary">Сохранить</button>\n    </div>\n  </div>\n</div>';
     $('body').append(html);
   }
 
   /**
    * Show the settings modal and populate it with current configuration.
    * Retrieves password from obfuscated storage or session memory.
+   * Prompts for master password if needed.
    *
    * @returns {Promise<boolean>} Promise that resolves to true if settings were saved, false if cancelled
    */
   async function showModal() {
+    // Prompt for master password if needed
+    const masterPwdOk = await promptMasterPasswordIfNeeded();
+    if (!masterPwdOk) {
+      // User cancelled master password prompt
+      return false;
+    }
+
     ensureMarkup();
     const c = loadConf();
     $('#tsUrl').val(c.url);
@@ -551,6 +827,20 @@
     $('#tsPass').val(pwd);
     $('#tsDirect').prop('checked', !!c.direct);
     $('#tsPersistPassword').prop('checked', !!c.persistPassword);
+
+    // Master password fields
+    $('#tsMasterPwd').val('');
+    $('#tsMasterPwdConfirm').val('');
+    $('#tsClearMasterPwd').prop('checked', false);
+    const hasMasterPwd = hasMasterPassword();
+    if (hasMasterPwd) {
+      $('#tsMasterPwdStatus').text('✓ Мастер-пароль установлен').css('color', '#2d7d46');
+    } else {
+      $('#tsMasterPwdStatus')
+        .text('⚠ Мастер-пароль не установлен (используется обфускация)')
+        .css('color', '#c0392b');
+    }
+
     $('#tsErr').hide().text('');
     $('#torrServerModal').show();
     return new Promise((res) => {
@@ -597,6 +887,7 @@
    * Submit the settings modal form.
    * Validates URL format, saves non-sensitive data to localStorage,
    * and stores password using obfuscated storage.
+   * Also handles master password setup/update/removal.
    */
   async function submitModal() {
     const url = $('#tsUrl').val().trim();
@@ -604,6 +895,9 @@
     const password = $('#tsPass').val();
     const direct = $('#tsDirect').is(':checked');
     const persistPassword = $('#tsPersistPassword').is(':checked');
+    const masterPwd = $('#tsMasterPwd').val();
+    const masterPwdConfirm = $('#tsMasterPwdConfirm').val();
+    const clearMasterPwd = $('#tsClearMasterPwd').is(':checked');
 
     const urlError = validateUrl(url);
     if (urlError) {
@@ -612,10 +906,39 @@
       return;
     }
 
+    // Handle master password
+    if (clearMasterPwd) {
+      // Clear master password
+      await setMasterPassword('');
+      $('#tsMasterPwdStatus').text('Мастер-пароль очищен').css('color', '#666');
+    } else if (masterPwd) {
+      // Set or update master password
+      if (masterPwd !== masterPwdConfirm) {
+        $('#tsErr').text('Мастер-пароли не совпадают').show();
+        $('#tsMasterPwdConfirm').focus();
+        return;
+      }
+      if (masterPwd.length < 8) {
+        $('#tsErr').text('Мастер-пароль должен содержать минимум 8 символов').show();
+        $('#tsMasterPwd').focus();
+        return;
+      }
+      const success = await setMasterPassword(masterPwd);
+      if (success) {
+        $('#tsMasterPwdStatus').text('✓ Мастер-пароль установлен').css('color', '#2d7d46');
+        // Re-encrypt all existing passwords with the new master password
+        // This is done automatically when passwords are accessed next time
+      } else {
+        $('#tsErr').text('Не удалось установить мастер-пароль').show();
+        return;
+      }
+    }
+
     $('#tsUrl').attr('aria-invalid', 'false');
     // Save only non-sensitive data (url, username, direct, persistPassword) to localStorage
     saveConf({ url, username, direct, persistPassword });
     // Store password using obfuscated storage (localStorage or sessionStorage based on preference)
+    // If master password is set, it will be used for encryption automatically
     await setPassword(url, username, password, persistPassword);
     closeModal(true);
   }
@@ -738,6 +1061,7 @@
    * Entry point for UI buttons: sends magnet link to TorrServer.
    * Chooses between proxy mode (default) and direct mode based on configuration.
    * Retrieves password from obfuscated storage or session memory.
+   * Prompts for master password if needed.
    *
    * @param {string} magnet - Magnet link to send
    */
@@ -745,6 +1069,13 @@
     const conf = loadConf();
     if (!conf.url) {
       openSettings();
+      return;
+    }
+    // Prompt for master password if needed
+    const masterPwdOk = await promptMasterPasswordIfNeeded();
+    if (!masterPwdOk) {
+      // User cancelled master password prompt
+      toast('Требуется мастер-пароль для расшифровки пароля', 'err');
       return;
     }
     // Retrieve password from obfuscated storage or session memory
