@@ -28,10 +28,10 @@
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-unicorn": "^62.0.0",
-    "nodemon": "^3.1.4",
+    "nodemon": "^3.1.11",
     "prettier": "^3.3.3",
     "typescript": "^5.9.3",
-    "wrangler": "^4.46.0"
+    "wrangler": "^4.47.0"
   },
   "engines": {
     "node": ">=18.0.0"
