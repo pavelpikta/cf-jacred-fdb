@@ -360,19 +360,19 @@
       return;
     }
 
-    // Build HTML with staggered animation delays for smooth visual effect
-    // Each card gets a CSS variable and animation delay based on its index
-    const animateResults = !isSafari && filteredResults.length <= 200;
+    // Build HTML - animations disabled for better performance
+    // Only animate for very small result sets (<= 50 items) to reduce overhead
+    const animateResults = !isSafari && filteredResults.length <= 50;
     const html = filteredResults
       .map((r, idx) => {
         const itemHtml = buildItem(r);
         if (!animateResults) {
           return itemHtml;
         }
-        // Inject CSS variables for staggered animation (30ms delay per card)
+        // Inject CSS variables for minimal staggered animation (10ms delay per card)
         return itemHtml.replace(
           /(<div class="webResult[^"]*")/,
-          `$1 style="--result-index: ${idx}; animation-delay: ${idx * 0.03}s"`
+          `$1 style="--result-index: ${idx}; animation-delay: ${idx * 0.01}s"`
         );
       })
       .join('\n');
@@ -380,8 +380,8 @@
     $results.html(html);
     $resultsSummary.text(`Найдено: ${filteredResults.length} / Всего: ${allResults.length}`).show();
 
-    // Force reflow to trigger CSS animations (read offsetHeight to flush layout)
-    if (animateResults && $results[0]) {
+    // Force reflow to trigger CSS animations only for small animated sets
+    if (animateResults && $results[0] && filteredResults.length <= 50) {
       void $results[0].offsetHeight;
     }
   }

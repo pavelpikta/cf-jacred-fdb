@@ -355,20 +355,27 @@ function __initStats() {
     }
     emptyState.hide();
     counterEl.text(viewData.length);
+    // Disable animations for better performance - only animate small sets
+    const shouldAnimate = viewData.length <= 30;
     const html = viewData
       .map((item, idx) => {
         const cardHtml = buildCard(item);
-        // Add index for staggered animation
+        if (!shouldAnimate) {
+          return cardHtml;
+        }
+        // Minimal staggered animation (10ms delay per card)
         return cardHtml.replace(
           '<div class="tracker-card',
-          `<div class="tracker-card" style="--card-index: ${idx}; animation-delay: ${idx * 0.03}s"`
+          `<div class="tracker-card" style="--card-index: ${idx}; animation-delay: ${idx * 0.01}s"`
         );
       })
       .join('');
     grid.html(html);
 
-    // Trigger reflow for animation
-    void grid[0].offsetHeight;
+    // Trigger reflow for animation only if animating
+    if (shouldAnimate && grid[0]) {
+      void grid[0].offsetHeight;
+    }
   }
 
   /**
