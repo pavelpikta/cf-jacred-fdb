@@ -19,8 +19,3 @@ export const staticAsset: Middleware = async (ctx) => {
   const assetResp = await ctx.env.ASSETS.fetch(fetchReq);
   return withAdjustedAssetCaching(effectivePath, assetResp);
 };
-
-// Helper reused by upstream middleware
-export function computeDirect(pathname: string): boolean {
-  return isDirectPath(pathname);
-}
