@@ -17,8 +17,7 @@ export function assetCacheControl(pathname: string): string {
   if (lower.endsWith('.html')) return 'no-cache, must-revalidate';
   if (hashed) return 'public, max-age=31536000, immutable';
   if (CSS_JS_RE.test(lower)) return 'public, max-age=3600';
-  if (MEDIA_RE.test(lower))
-    return 'public, max-age=604800';
+  if (MEDIA_RE.test(lower)) return 'public, max-age=604800';
   return 'public, max-age=300';
 }
 

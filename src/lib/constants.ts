@@ -12,7 +12,14 @@ export function getUpstreamOrigin(env: EnvLike): string {
 
 export const LOCAL_PREFIX = '/api';
 // Direct passthrough prefixes (bypass local /api mapping logic)
-export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'] as const;
+export const DIRECT_PREFIXES = [
+  '/stats',
+  '/stats/',
+  '/sync',
+  '/sync/',
+  '/lastupdatedb',
+  '/health',
+] as const;
 // Subset of direct prefixes that are always allowed without an API key even if API_KEY is configured.
 export const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'] as const;
 export const ALLOWED_METHODS = ['GET', 'HEAD', 'OPTIONS', 'POST'] as const;

@@ -1,12 +1,7 @@
 import { badRequest, errorResponse, json } from './errors';
 import { fetchWithTimeout } from './fetching';
 import { isAbortError } from './abort';
-import {
-  TORRSERVER_ADD_PATH,
-  TORRSERVER_TEST_PATH,
-  MAGNET_PREFIX,
-  USER_AGENT,
-} from './constants';
+import { TORRSERVER_ADD_PATH, TORRSERVER_TEST_PATH, MAGNET_PREFIX, USER_AGENT } from './constants';
 import type { EnvLike } from './constants';
 import type { Locale } from './i18n';
 
