@@ -3,7 +3,7 @@ import { addStandardResponseHeaders } from './security';
 // Match hashed filenames like main.abcdef1234.js (. or - separators)
 const HASH_RE = /[.-]([a-f0-9]{8,})[.]/i;
 const CSS_JS_RE = /\.(css|js)$/;
-const MEDIA_RE = /\.png|\.jpg|\.jpeg|\.gif|\.webp|\.avif|\.svg|\.ico|\.woff2?|\.ttf$/;
+const MEDIA_RE = /\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|woff2?|ttf)$/;
 
 /**
  * Determines the appropriate Cache-Control header value based on asset pathname.
