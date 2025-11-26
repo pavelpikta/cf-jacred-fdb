@@ -2,6 +2,7 @@ import { badRequest, errorResponse, json } from './errors';
 import { fetchWithTimeout } from './fetching';
 import { isAbortError } from './abort';
 import type { EnvLike } from './constants';
+import type { Locale } from './i18n';
 
 interface TorrAddRequestBody {
   magnet?: string;
@@ -93,20 +94,22 @@ interface TorrAddArgs {
   pathname: string;
   torrTimeoutMs: number;
   env: EnvLike;
+  locale: Locale;
 }
 export async function handleTorrServerAdd({
   request,
   pathname,
   torrTimeoutMs,
   env,
+  locale,
 }: TorrAddArgs): Promise<Response | null> {
   if (pathname !== '/api/torrserver/add') return null;
-  if (request.method !== 'POST') return badRequest();
+  if (request.method !== 'POST') return badRequest(locale);
   let body: TorrAddRequestBody | undefined;
   try {
     body = (await request.json()) as TorrAddRequestBody;
   } catch {
-    return badRequest('expect_json_body');
+    return badRequest(locale, 'expect_json_body');
   }
   const magnet = ((body && body.magnet) || '').trim();
   const tsUrlRaw = ((body && body.url) || '').trim();
@@ -114,14 +117,14 @@ export async function handleTorrServerAdd({
   const pass = (body && (body.password ?? '')).toString();
   const addPath = '/torrents';
   const debug = !!body.debug;
-  if (!magnet || !magnet.startsWith('magnet:')) return badRequest('invalid_magnet');
-  if (!tsUrlRaw) return badRequest('missing_url');
-  if ((user && !pass) || (pass && !user)) return badRequest('auth_credentials_mismatch');
+  if (!magnet || !magnet.startsWith('magnet:')) return badRequest(locale, 'invalid_magnet');
+  if (!tsUrlRaw) return badRequest(locale, 'missing_url');
+  if ((user && !pass) || (pass && !user)) return badRequest(locale, 'auth_credentials_mismatch');
   let tsUrl: URL;
   try {
     tsUrl = normalizeTorrServerUrl(tsUrlRaw);
   } catch (err) {
-    return badRequest(err instanceof Error ? err.message : 'invalid_url');
+    return badRequest(locale, err instanceof Error ? err.message : 'invalid_url');
   }
   const addUrl = new URL(addPath, tsUrl);
   const payloadObj = { action: 'add', link: magnet };
@@ -178,10 +181,16 @@ export async function handleTorrServerAdd({
   const first = await attemptJson();
   const respObj = first.resp as Response | null;
   if (!respObj)
-    return errorResponse('torrserver_all_attempts_failed', 'torrserver_all_attempts_failed', 502, {
-      attempts,
-      requested: addUrl.toString(),
-    });
+    return errorResponse(
+      locale,
+      'torrserver_all_attempts_failed',
+      'torrserver_all_attempts_failed',
+      502,
+      {
+        attempts,
+        requested: addUrl.toString(),
+      }
+    );
   let authHint: string | undefined = undefined;
   if (respObj.status === 401 || respObj.status === 403) authHint = 'auth_error_hint';
   const hdrs: Record<string, string> = {};
@@ -211,30 +220,32 @@ interface TorrTestArgs {
   pathname: string;
   torrTimeoutMs: number;
   env: EnvLike;
+  locale: Locale;
 }
 export async function handleTorrServerTest({
   request,
   pathname,
   torrTimeoutMs,
   env,
+  locale,
 }: TorrTestArgs): Promise<Response | null> {
   if (pathname !== '/api/torrserver/test') return null;
-  if (request.method !== 'POST') return badRequest();
+  if (request.method !== 'POST') return badRequest(locale);
   let body: TorrAddRequestBody | undefined;
   try {
     body = (await request.json()) as TorrAddRequestBody;
   } catch {
-    return badRequest('expect_json_body');
+    return badRequest(locale, 'expect_json_body');
   }
   const tsUrlRaw = ((body && body.url) || '').trim();
   const user = ((body && body.username) || '').trim();
   const pass = (body && (body.password ?? '')).toString();
-  if (!tsUrlRaw) return badRequest('missing_url');
+  if (!tsUrlRaw) return badRequest(locale, 'missing_url');
   let tsUrl: URL;
   try {
     tsUrl = normalizeTorrServerUrl(tsUrlRaw);
   } catch (err) {
-    return badRequest(err instanceof Error ? err.message : 'invalid_url');
+    return badRequest(locale, err instanceof Error ? err.message : 'invalid_url');
   }
   const testUrl = new URL('/echo', tsUrl);
   const { headers, cfAccessTokens } = buildTorrServerHeaders({ env, user, pass, jsonBody: false });
@@ -249,11 +260,11 @@ export async function handleTorrServerTest({
     }
   } catch (err) {
     if (isAbortError(err))
-      return errorResponse('torrserver_timeout', 'torrserver_timeout', 504, {
+      return errorResponse(locale, 'torrserver_timeout', 'torrserver_timeout', 504, {
         ok: false,
         timeoutMs: torrTimeoutMs,
       });
-    return errorResponse('torrserver_network', 'torrserver_network', 502, {
+    return errorResponse(locale, 'torrserver_network', 'torrserver_network', 502, {
       ok: false,
       detail: err instanceof Error ? err.message : String(err),
     });

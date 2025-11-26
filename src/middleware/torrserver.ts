@@ -9,6 +9,7 @@ export const torrserver: Middleware = async (ctx) => {
     pathname: ctx.pathname,
     torrTimeoutMs: ctx.config.torrTimeoutMs,
     env: ctx.env,
+    locale: ctx.locale,
   });
   if (add) return add;
   const test = await handleTorrServerTest({
@@ -16,6 +17,7 @@ export const torrserver: Middleware = async (ctx) => {
     pathname: ctx.pathname,
     torrTimeoutMs: ctx.config.torrTimeoutMs,
     env: ctx.env,
+    locale: ctx.locale,
   });
   if (test) return test;
 };

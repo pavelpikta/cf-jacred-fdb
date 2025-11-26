@@ -1,6 +1,7 @@
 import type { ApiKeyInfo } from '../lib/apiKey';
 import type { ResolvedConfig } from '../config';
 import type { WorkerEnv } from '../worker';
+import type { Locale } from '../lib/i18n';
 
 export interface RequestContext {
   request: Request;
@@ -10,6 +11,7 @@ export interface RequestContext {
   start: number;
   config: ResolvedConfig;
   apiKey: ApiKeyInfo;
+  locale: Locale;
   isApi: boolean; // path starts with /api
   direct: boolean; // direct passthrough prefixes (stats/sync etc.)
   upstreamPath?: string;

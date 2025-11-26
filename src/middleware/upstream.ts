@@ -14,20 +14,20 @@ export const upstream: Middleware = async (ctx) => {
   // API key enforcement (non-conf paths): do not allow if invalid, allow API key exempt prefixes
   const apiKeyExempt = ctx.direct && isDirectApiKeyExempt(ctx.pathname);
   if ((ctx.isApi || ctx.direct) && !apiKeyExempt && ctx.apiKey.keyEnforced && !ctx.apiKey.keyValid)
-    return errorResponse('forbidden', 'forbidden', 403);
+    return errorResponse(ctx.locale, 'forbidden', 'forbidden', 403);
 
   // Validate path encoding
   try {
     decodeURIComponent(ctx.pathname);
   } catch {
-    return badRequest('path_decode_error');
+    return badRequest(ctx.locale, 'path_decode_error');
   }
 
   let upstreamPath: string;
   try {
     upstreamPath = ctx.direct ? ctx.pathname : mapUpstreamPath(ctx.pathname);
   } catch {
-    return badRequest('path_map_error');
+    return badRequest(ctx.locale, 'path_map_error');
   }
   ctx.upstreamPath = upstreamPath;
   const upstreamUrl = new URL(upstreamPath, ctx.config.upstreamOrigin);
@@ -44,10 +44,10 @@ export const upstream: Middleware = async (ctx) => {
     );
   } catch (err) {
     if (isAbortError(err))
-      return errorResponse('upstream_timeout', 'upstream_timeout', 504, {
+      return errorResponse(ctx.locale, 'upstream_timeout', 'upstream_timeout', 504, {
         timeoutMs: ctx.config.upstreamTimeoutMs,
       });
-    return errorResponse('upstream_fetch_failed', 'upstream_fetch_failed', 502, {
+    return errorResponse(ctx.locale, 'upstream_fetch_failed', 'upstream_fetch_failed', 502, {
       detail: err instanceof Error ? err.message : String(err),
     });
   }

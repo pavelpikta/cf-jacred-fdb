@@ -1,13 +1,5 @@
 import { CORS_HEADERS, ALLOWED_METHODS } from './constants';
-import { getMessages, resolveLocale, type Locale } from './i18n';
-
-let activeLocale: Locale = 'ru';
-let M = getMessages(activeLocale);
-
-export function initErrorLocale(env: { ERROR_LOCALE?: string }) {
-  activeLocale = resolveLocale(env?.ERROR_LOCALE);
-  M = getMessages(activeLocale);
-}
+import { getMessages, type Locale } from './i18n';
 
 export interface ErrorEnvelope {
   error: string;
@@ -34,6 +26,7 @@ export function json(
 }
 
 export function errorResponse(
+  locale: Locale,
   code: string,
   messageOrKey: string,
   status: number,
@@ -41,26 +34,28 @@ export function errorResponse(
   extraHeaders: Record<string, string> = {}
 ): Response {
   // Allow passing either raw message or key existing in locale pack.
+  const M = getMessages(locale);
   const isKey = Object.prototype.hasOwnProperty.call(M, messageOrKey);
   const translated = isKey ? (M as Record<string, string>)[messageOrKey] : messageOrKey;
   const payload: ErrorEnvelope = {
     error: translated,
     code,
-    locale: activeLocale,
+    locale,
     messageKey: isKey ? messageOrKey : code,
     ...extra,
   };
   return json(payload, status, extraHeaders);
 }
 
-export function notFound(custom?: string): Response {
-  return errorResponse('not_found', custom ? custom : 'not_found', 404);
+export function notFound(locale: Locale, custom?: string): Response {
+  return errorResponse(locale, 'not_found', custom ? custom : 'not_found', 404);
 }
-export function badRequest(custom?: string): Response {
-  return errorResponse('bad_request', custom ? custom : 'bad_request', 400);
+export function badRequest(locale: Locale, custom?: string): Response {
+  return errorResponse(locale, 'bad_request', custom ? custom : 'bad_request', 400);
 }
-export function methodNotAllowed(): Response {
+export function methodNotAllowed(locale: Locale): Response {
   return errorResponse(
+    locale,
     'method_not_allowed',
     'method_not_allowed',
     405,
