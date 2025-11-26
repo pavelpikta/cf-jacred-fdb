@@ -1,4 +1,3 @@
-import { isDirectPath } from '../lib/constants';
 import { withAdjustedAssetCaching } from '../lib/assets';
 import { resolveHashedPath } from '../lib/manifest';
 import type { Middleware } from './types';
