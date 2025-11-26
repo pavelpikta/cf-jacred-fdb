@@ -6,6 +6,7 @@ import type { Locale } from '../lib/i18n';
 export interface RequestContext {
   request: Request;
   env: WorkerEnv;
+  ctx: ExecutionContext;
   url: URL;
   pathname: string;
   start: number;

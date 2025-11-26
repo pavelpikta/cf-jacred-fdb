@@ -1,7 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import type { EnvLike } from './lib/constants';
 import { parseApiKey } from './lib/apiKey';
-import { flushPending } from './lib/fetching';
 import { resolveConfig } from './config';
 import {
   statsAsset,
@@ -21,7 +20,6 @@ export type WorkerEnv = EnvLike;
 
 export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
-    flushPending(ctx);
     const start = Date.now();
     const url = new URL(request.url);
     const pathname = url.pathname;
@@ -34,6 +32,7 @@ export default {
     const context: RequestContext = {
       request,
       env,
+      ctx,
       url,
       pathname,
       start,

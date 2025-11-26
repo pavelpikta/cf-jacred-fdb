@@ -1,15 +1,7 @@
 import { addStandardResponseHeaders } from './security';
 
-// Track promises scheduled for waitUntil
-let pendingWaitUntil: Promise<unknown>[] = [];
-export function ctxWaitUntilSafe(promise: Promise<unknown>): void {
-  pendingWaitUntil.push(promise);
-}
-export function flushPending(ctx: ExecutionContext): void {
-  if (pendingWaitUntil.length) {
-    for (const p of pendingWaitUntil) ctx.waitUntil(p);
-    pendingWaitUntil = [];
-  }
+export function ctxWaitUntilSafe(ctx: ExecutionContext, promise: Promise<unknown>): void {
+  ctx.waitUntil(promise);
 }
 
 export async function fetchWithTimeout(
@@ -53,6 +45,7 @@ export async function fetchUpstream(
 }
 
 export async function cachedFetch(
+  ctx: ExecutionContext,
   upstreamUrl: string,
   request: Request,
   timeoutMs: number
@@ -107,7 +100,7 @@ export async function cachedFetch(
       status: upstreamResp.status,
       headers: cacheHeaders,
     });
-    ctxWaitUntilSafe(cache.put(cacheKey, cacheable));
+    ctxWaitUntilSafe(ctx, cache.put(cacheKey, cacheable));
   }
   return upstreamResp;
 }

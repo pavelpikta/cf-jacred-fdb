@@ -13,6 +13,7 @@ export const confEndpoint: Middleware = async (ctx) => {
   let baseConf: Record<string, unknown> = {};
   try {
     const upstreamConfResp = await cachedFetch(
+      ctx.ctx,
       confUrl.toString(),
       request,
       config.upstreamTimeoutMs

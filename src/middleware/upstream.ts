@@ -38,6 +38,7 @@ export const upstream: Middleware = async (ctx) => {
   let upstreamResp: Response;
   try {
     upstreamResp = await cachedFetch(
+      ctx.ctx,
       upstreamUrl.toString(),
       ctx.request,
       ctx.config.upstreamTimeoutMs
