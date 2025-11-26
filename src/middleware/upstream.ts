@@ -7,7 +7,6 @@ import {
 import { mapUpstreamPath } from '../lib/routing';
 import { errorResponse, badRequest } from '../lib/errors';
 import { cachedFetch } from '../lib/fetching';
-import { stripApiKeyParams } from '../lib/apiKey';
 import { addStandardResponseHeaders } from '../lib/security';
 import { isAbortError } from '../lib/abort';
 import type { Middleware } from './types';
@@ -36,8 +35,10 @@ export const upstream: Middleware = async (ctx) => {
   }
   ctx.upstreamPath = upstreamPath;
   const upstreamUrl = new URL(upstreamPath, ctx.config.upstreamOrigin);
-  upstreamUrl.search = ctx.url.search; // initial search (with potential api key)
-  if (stripApiKeyParams(ctx.url)) upstreamUrl.search = ctx.url.search; // remove if present
+  const cleanedSearch = new URLSearchParams(ctx.url.searchParams);
+  cleanedSearch.delete('apikey');
+  cleanedSearch.delete('api_key');
+  upstreamUrl.search = cleanedSearch.toString();
   ctx.upstreamUrl = upstreamUrl;
 
   let upstreamResp: Response;
