@@ -40,6 +40,19 @@ const RULES: MappingRule[] = [
   },
 ];
 
+/**
+ * Maps a local /api/* pathname to the corresponding upstream path.
+ * Uses declarative rules with regex/predicate matching.
+ *
+ * @param pathname - The incoming pathname starting with /api (e.g., '/api/conf')
+ * @returns The mapped upstream path (e.g., '/api/v1.0/conf')
+ * @example
+ * ```ts
+ * mapUpstreamPath('/api/conf');      // '/api/v1.0/conf'
+ * mapUpstreamPath('/api/torrents');  // '/api/v1.0/torrents'
+ * mapUpstreamPath('/api/v2/search'); // '/api/v2/search'
+ * ```
+ */
 export function mapUpstreamPath(pathname: string): string {
   const after = pathname.substring(LOCAL_PREFIX.length);
   for (const rule of RULES) {

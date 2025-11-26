@@ -3,6 +3,12 @@ import { addStandardResponseHeaders } from './security';
 // Match hashed filenames like main.abcdef1234.js (. or - separators)
 const HASH_RE = /[.-]([a-f0-9]{8,})[.]/i;
 
+/**
+ * Determines the appropriate Cache-Control header value based on asset pathname.
+ *
+ * @param pathname - The asset's URL pathname
+ * @returns Cache-Control header value (e.g., 'public, max-age=31536000, immutable' for hashed assets)
+ */
 export function assetCacheControl(pathname: string): string {
   const lower = pathname.toLowerCase();
   const hashed = HASH_RE.test(lower);
@@ -15,6 +21,13 @@ export function assetCacheControl(pathname: string): string {
   return 'public, max-age=300';
 }
 
+/**
+ * Creates a new Response with adjusted caching headers and standard security headers.
+ *
+ * @param pathname - The asset's URL pathname (used to determine cache policy)
+ * @param resp - The original Response to clone with new headers
+ * @returns A new Response with appropriate Cache-Control and security headers
+ */
 export function withAdjustedAssetCaching(pathname: string, resp: Response): Response {
   const h = new Headers(resp.headers);
   h.set('Cache-Control', assetCacheControl(pathname));

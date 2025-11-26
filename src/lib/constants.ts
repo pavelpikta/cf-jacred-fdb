@@ -1,4 +1,11 @@
 export const DEFAULT_UPSTREAM_ORIGIN = 'http://redapi.cfhttp.top';
+
+/**
+ * Returns the upstream origin URL from environment or falls back to default.
+ *
+ * @param env - Environment object with optional UPSTREAM_ORIGIN
+ * @returns The upstream origin URL string
+ */
 export function getUpstreamOrigin(env: EnvLike): string {
   return env && env.UPSTREAM_ORIGIN ? env.UPSTREAM_ORIGIN : DEFAULT_UPSTREAM_ORIGIN;
 }
@@ -34,17 +41,32 @@ export const USER_AGENT = 'cf-jacred-worker/1.0';
 export const DEFAULT_CACHE_CONTROL_OK = 'public, max-age=60, s-maxage=300';
 export const DEFAULT_CACHE_CONTROL_ERROR = 'no-cache, max-age=0';
 
+/**
+ * Checks if a path is a direct passthrough path (bypasses /api mapping).
+ *
+ * @param path - The URL pathname to check
+ * @returns True if path matches a direct passthrough prefix
+ */
 export function isDirectPath(path: string): boolean {
   return DIRECT_PREFIXES.some((p) => path === p || path.startsWith(p));
 }
 
-// Returns true if a direct path should be allowed without providing an API key
-// even when API key enforcement is enabled globally.
+/**
+ * Checks if a direct path should be allowed without API key when enforcement is enabled.
+ *
+ * @param path - The URL pathname to check
+ * @returns True if path is exempt from API key requirement
+ */
 export function isDirectApiKeyExempt(path: string): boolean {
   return DIRECT_API_KEY_EXEMPT_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
 }
 
-// Centralized helper for identifying the stats HTML (supports legacy variants)
+/**
+ * Checks if a path is a stats HTML asset request (supports legacy variants).
+ *
+ * @param path - The URL pathname to check
+ * @returns True if path matches stats page patterns
+ */
 export function isStatsAssetRequest(path: string): boolean {
   return path === '/stats' || path === '/stats/' || path === '/stats.html';
 }

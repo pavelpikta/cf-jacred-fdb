@@ -9,6 +9,14 @@ export interface ErrorEnvelope {
   [k: string]: unknown;
 }
 
+/**
+ * Creates a JSON Response with standard headers.
+ *
+ * @param data - Data to serialize as JSON
+ * @param status - HTTP status code (default: 200)
+ * @param extraHeaders - Additional headers to include
+ * @returns JSON Response with CORS and content-type headers
+ */
 export function json(
   data: unknown,
   status = 200,
@@ -25,6 +33,17 @@ export function json(
   });
 }
 
+/**
+ * Creates a localized error JSON Response.
+ *
+ * @param locale - Locale for message translation ('en' | 'ru')
+ * @param code - Error code identifier
+ * @param messageOrKey - Raw message string or i18n key to translate
+ * @param status - HTTP status code
+ * @param extra - Additional fields to include in response body
+ * @param extraHeaders - Additional response headers
+ * @returns JSON Response with error envelope
+ */
 export function errorResponse(
   locale: Locale,
   code: string,
@@ -47,12 +66,34 @@ export function errorResponse(
   return json(payload, status, extraHeaders);
 }
 
+/**
+ * Creates a 404 Not Found error Response.
+ *
+ * @param locale - Locale for message translation
+ * @param custom - Optional custom message or i18n key
+ * @returns 404 JSON Response
+ */
 export function notFound(locale: Locale, custom?: string): Response {
   return errorResponse(locale, 'not_found', custom ? custom : 'not_found', 404);
 }
+
+/**
+ * Creates a 400 Bad Request error Response.
+ *
+ * @param locale - Locale for message translation
+ * @param custom - Optional custom message or i18n key
+ * @returns 400 JSON Response
+ */
 export function badRequest(locale: Locale, custom?: string): Response {
   return errorResponse(locale, 'bad_request', custom ? custom : 'bad_request', 400);
 }
+
+/**
+ * Creates a 405 Method Not Allowed error Response with Allow header.
+ *
+ * @param locale - Locale for message translation
+ * @returns 405 JSON Response with Allow header listing permitted methods
+ */
 export function methodNotAllowed(locale: Locale): Response {
   return errorResponse(
     locale,

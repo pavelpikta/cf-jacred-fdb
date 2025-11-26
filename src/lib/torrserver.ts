@@ -30,11 +30,28 @@ interface TorrAddAttempt {
   networkError?: string;
 }
 
+/**
+ * Encodes username and password as HTTP Basic Authentication header value.
+ *
+ * @param user - Username
+ * @param pass - Password
+ * @returns Base64-encoded Basic auth string (e.g., 'Basic dXNlcjpwYXNz')
+ */
 export function encodeBasicAuth(user: string, pass: string): string {
   const creds = `${user}:${pass}`;
   return 'Basic ' + btoa(String.fromCharCode(...new TextEncoder().encode(creds)));
 }
 
+/**
+ * Builds HTTP headers for TorrServer requests including auth and CF Access tokens.
+ *
+ * @param options - Configuration object
+ * @param options.env - Environment with optional CF_ACCESS_CLIENT_ID/SECRET
+ * @param options.user - Username for Basic auth (empty string to skip)
+ * @param options.pass - Password for Basic auth
+ * @param options.jsonBody - Whether to include Content-Type: application/json header
+ * @returns Object with headers and cfAccessTokens boolean indicating if tokens were added
+ */
 export function buildTorrServerHeaders({
   env,
   user,
@@ -63,6 +80,14 @@ export function buildTorrServerHeaders({
   return { headers, cfAccessTokens: !!(id && secret) };
 }
 
+/**
+ * Normalizes and validates a TorrServer URL string.
+ *
+ * @param raw - Raw URL string to normalize
+ * @returns Parsed URL object with trailing slash removed
+ * @throws Error with message 'missing_url' if raw is empty
+ * @throws Error with message 'invalid_url' if URL parsing fails
+ */
 export function normalizeTorrServerUrl(raw: string): URL {
   const trimmed = (raw || '').trim();
   if (!trimmed) throw new Error('missing_url');
@@ -73,6 +98,14 @@ export function normalizeTorrServerUrl(raw: string): URL {
   }
 }
 
+/**
+ * Detects if a 403 response is from Cloudflare Access based on response body.
+ *
+ * @param status - HTTP status code
+ * @param raw - Raw response body text (optional)
+ * @param parsed - Parsed JSON response body (optional)
+ * @returns True if response appears to be a Cloudflare Access 403
+ */
 export function detectCloudflareAccess(status: number, raw?: string, parsed?: unknown): boolean {
   if (status !== 403) return false;
   try {
@@ -102,6 +135,19 @@ interface TorrAddArgs {
   env: EnvLike;
   locale: Locale;
 }
+
+/**
+ * Handles POST requests to add a magnet to TorrServer.
+ * Expects JSON body with magnet, url, and optional username/password.
+ *
+ * @param args - Request handling arguments
+ * @param args.request - Incoming Request object
+ * @param args.pathname - Request pathname (must match TORRSERVER_ADD_PATH)
+ * @param args.torrTimeoutMs - Timeout for TorrServer requests in milliseconds
+ * @param args.env - Worker environment
+ * @param args.locale - Locale for error messages
+ * @returns JSON Response with result, or null if pathname doesn't match
+ */
 export async function handleTorrServerAdd({
   request,
   pathname,
@@ -228,6 +274,19 @@ interface TorrTestArgs {
   env: EnvLike;
   locale: Locale;
 }
+
+/**
+ * Handles POST requests to test TorrServer connectivity.
+ * Expects JSON body with url and optional username/password.
+ *
+ * @param args - Request handling arguments
+ * @param args.request - Incoming Request object
+ * @param args.pathname - Request pathname (must match TORRSERVER_TEST_PATH)
+ * @param args.torrTimeoutMs - Timeout for TorrServer requests in milliseconds
+ * @param args.env - Worker environment
+ * @param args.locale - Locale for error messages
+ * @returns JSON Response with connectivity result, or null if pathname doesn't match
+ */
 export async function handleTorrServerTest({
   request,
   pathname,
