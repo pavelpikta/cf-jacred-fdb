@@ -1,7 +1,13 @@
 import { badRequest, errorResponse, json } from './errors';
 import { fetchWithTimeout } from './fetching';
 import { isAbortError } from './abort';
-import { TORRSERVER_ADD_PATH, TORRSERVER_TEST_PATH, MAGNET_PREFIX, USER_AGENT } from './constants';
+import {
+  TORRSERVER_ADD_PATH,
+  TORRSERVER_TEST_PATH,
+  MAGNET_PREFIX,
+  USER_AGENT,
+  TORRSERVER_FORWARD_HEADERS,
+} from './constants';
 import type { EnvLike } from './constants';
 import type { Locale } from './i18n';
 
@@ -242,7 +248,7 @@ export async function handleTorrServerAdd({
   if (respObj.status === 401 || respObj.status === 403) authHint = 'auth_error_hint';
   const hdrs: Record<string, string> = {};
   for (const [k, v] of respObj.headers.entries()) {
-    if (/^(content-type|www-authenticate|server|content-length)$/i.test(k)) hdrs[k] = v;
+    if (TORRSERVER_FORWARD_HEADERS.has(k.toLowerCase())) hdrs[k] = v;
   }
   const cloudflareAccess = detectCloudflareAccess(
     respObj.status,

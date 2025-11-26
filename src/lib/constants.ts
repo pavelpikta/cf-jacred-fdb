@@ -48,6 +48,14 @@ export const USER_AGENT = 'cf-jacred-worker/1.0';
 export const DEFAULT_CACHE_CONTROL_OK = 'public, max-age=60, s-maxage=300';
 export const DEFAULT_CACHE_CONTROL_ERROR = 'no-cache, max-age=0';
 
+// Headers to forward from TorrServer responses
+export const TORRSERVER_FORWARD_HEADERS = new Set([
+  'content-type',
+  'www-authenticate',
+  'server',
+  'content-length',
+]);
+
 /**
  * Checks if a path is a direct passthrough path (bypasses /api mapping).
  *
