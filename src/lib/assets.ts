@@ -2,6 +2,8 @@ import { addStandardResponseHeaders } from './security';
 
 // Match hashed filenames like main.abcdef1234.js (. or - separators)
 const HASH_RE = /[.-]([a-f0-9]{8,})[.]/i;
+const CSS_JS_RE = /\.(css|js)$/;
+const MEDIA_RE = /\.png|\.jpg|\.jpeg|\.gif|\.webp|\.avif|\.svg|\.ico|\.woff2?|\.ttf$/;
 
 /**
  * Determines the appropriate Cache-Control header value based on asset pathname.
@@ -14,9 +16,8 @@ export function assetCacheControl(pathname: string): string {
   const hashed = HASH_RE.test(lower);
   if (lower.endsWith('.html')) return 'no-cache, must-revalidate';
   if (hashed) return 'public, max-age=31536000, immutable';
-  // Match .css or .js at end (previous regex /\.css|\.js$/ was missing grouping and could mis-match)
-  if (/\.(css|js)$/.test(lower)) return 'public, max-age=3600';
-  if (/\.png|\.jpg|\.jpeg|\.gif|\.webp|\.avif|\.svg|\.ico|\.woff2?|\.ttf$/.test(lower))
+  if (CSS_JS_RE.test(lower)) return 'public, max-age=3600';
+  if (MEDIA_RE.test(lower))
     return 'public, max-age=604800';
   return 'public, max-age=300';
 }
