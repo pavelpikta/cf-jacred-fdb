@@ -30,20 +30,30 @@ export function parseApiKey(env: { API_KEY?: string }, url: URL): ApiKeyInfo {
 }
 
 /**
+ * Removes API key query parameters from URLSearchParams (mutates in place).
+ *
+ * @param params - URLSearchParams to strip apikey/api_key parameters from
+ * @returns True if any parameters were removed, false otherwise
+ */
+export function stripApiKeyFromParams(params: URLSearchParams): boolean {
+  let removed = false;
+  if (params.has('apikey')) {
+    params.delete('apikey');
+    removed = true;
+  }
+  if (params.has('api_key')) {
+    params.delete('api_key');
+    removed = true;
+  }
+  return removed;
+}
+
+/**
  * Removes API key query parameters from a URL object (mutates the URL).
  *
  * @param url - URL object to strip apikey/api_key parameters from
  * @returns True if any parameters were removed, false otherwise
  */
 export function stripApiKeyParams(url: URL): boolean {
-  let removed = false;
-  if (url.searchParams.has('apikey')) {
-    url.searchParams.delete('apikey');
-    removed = true;
-  }
-  if (url.searchParams.has('api_key')) {
-    url.searchParams.delete('api_key');
-    removed = true;
-  }
-  return removed;
+  return stripApiKeyFromParams(url.searchParams);
 }

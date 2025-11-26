@@ -1,4 +1,5 @@
 import { addStandardResponseHeaders } from './security';
+import { stripApiKeyFromParams } from './apiKey';
 
 /**
  * Safely registers a promise with the execution context's waitUntil.
@@ -44,8 +45,7 @@ export function buildCacheKey(request: Request, upstreamUrl: string): Request {
   const u = new URL(upstreamUrl);
   u.searchParams.delete('_');
   // Remove API key query params to prevent cache fragmentation per user key.
-  u.searchParams.delete('apikey');
-  u.searchParams.delete('api_key');
+  stripApiKeyFromParams(u.searchParams);
   return new Request(u.toString(), { method: 'GET' });
 }
 

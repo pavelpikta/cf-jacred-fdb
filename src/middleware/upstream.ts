@@ -4,6 +4,7 @@ import {
   DEFAULT_CACHE_CONTROL_ERROR,
   isDirectApiKeyExempt,
 } from '../lib/constants';
+import { stripApiKeyFromParams } from '../lib/apiKey';
 import { mapUpstreamPath } from '../lib/routing';
 import { errorResponse, badRequest } from '../lib/errors';
 import { cachedFetch } from '../lib/fetching';
@@ -36,8 +37,7 @@ export const upstream: Middleware = async (ctx) => {
   ctx.upstreamPath = upstreamPath;
   const upstreamUrl = new URL(upstreamPath, ctx.config.upstreamOrigin);
   const cleanedSearch = new URLSearchParams(ctx.url.searchParams);
-  cleanedSearch.delete('apikey');
-  cleanedSearch.delete('api_key');
+  stripApiKeyFromParams(cleanedSearch);
   upstreamUrl.search = cleanedSearch.toString();
   ctx.upstreamUrl = upstreamUrl;
 
