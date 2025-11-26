@@ -12,9 +12,9 @@ export function getUpstreamOrigin(env: EnvLike): string {
 
 export const LOCAL_PREFIX = '/api';
 // Direct passthrough prefixes (bypass local /api mapping logic)
-export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'];
+export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'] as const;
 // Subset of direct prefixes that are always allowed without an API key even if API_KEY is configured.
-export const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'];
+export const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'] as const;
 export const ALLOWED_METHODS = ['GET', 'HEAD', 'OPTIONS', 'POST'] as const;
 export const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -29,7 +29,7 @@ export const STRIP_RESPONSE_HEADERS = [
   'te',
   'trailer',
   'upgrade',
-];
+] as const;
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30000;
 export const DEFAULT_TORRSERVER_TIMEOUT_MS = 15000;
 
