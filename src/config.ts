@@ -33,7 +33,15 @@ function parseEnvInt(value: string | undefined, defaultValue: number, name: stri
 export function resolveConfig(env: EnvLike): ResolvedConfig {
   return {
     upstreamOrigin: getUpstreamOrigin(env),
-    upstreamTimeoutMs: parseEnvInt(env.UPSTREAM_TIMEOUT_MS, DEFAULT_UPSTREAM_TIMEOUT_MS, 'UPSTREAM_TIMEOUT_MS'),
-    torrTimeoutMs: parseEnvInt(env.TORRSERVER_TIMEOUT_MS, DEFAULT_TORRSERVER_TIMEOUT_MS, 'TORRSERVER_TIMEOUT_MS'),
+    upstreamTimeoutMs: parseEnvInt(
+      env.UPSTREAM_TIMEOUT_MS,
+      DEFAULT_UPSTREAM_TIMEOUT_MS,
+      'UPSTREAM_TIMEOUT_MS'
+    ),
+    torrTimeoutMs: parseEnvInt(
+      env.TORRSERVER_TIMEOUT_MS,
+      DEFAULT_TORRSERVER_TIMEOUT_MS,
+      'TORRSERVER_TIMEOUT_MS'
+    ),
   };
 }
