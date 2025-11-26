@@ -61,7 +61,7 @@ export const upstream: Middleware = async (ctx) => {
 
   const respHeaders = new Headers();
   for (const [k, v] of upstreamResp.headers.entries()) {
-    if (STRIP_RESPONSE_HEADERS.includes(k.toLowerCase())) continue;
+    if ((STRIP_RESPONSE_HEADERS as readonly string[]).includes(k.toLowerCase())) continue;
     respHeaders.set(k, v);
   }
   if (!respHeaders.has('Cache-Control'))
