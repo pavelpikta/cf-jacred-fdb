@@ -1,6 +1,70 @@
 import { CORS_HEADERS, ALLOWED_METHODS } from './constants';
 import { getMessages, type Locale } from './i18n';
 
+/**
+ * Fluent builder for constructing HTTP responses with common headers.
+ */
+export class ResponseBuilder {
+  private headers = new Headers();
+  private status = 200;
+
+  /**
+   * Sets the HTTP status code.
+   */
+  withStatus(s: number): this {
+    this.status = s;
+    return this;
+  }
+
+  /**
+   * Adds standard CORS headers.
+   */
+  withCors(): this {
+    for (const [key, value] of Object.entries(CORS_HEADERS)) {
+      this.headers.set(key, value);
+    }
+    return this;
+  }
+
+  /**
+   * Sets the Cache-Control header.
+   */
+  withCache(cc: string): this {
+    this.headers.set('Cache-Control', cc);
+    return this;
+  }
+
+  /**
+   * Adds a custom header.
+   */
+  withHeader(key: string, value: string): this {
+    this.headers.set(key, value);
+    return this;
+  }
+
+  /**
+   * Builds a JSON response.
+   */
+  json(data: unknown): Response {
+    this.headers.set('Content-Type', 'application/json; charset=utf-8');
+    return new Response(JSON.stringify(data), {
+      status: this.status,
+      headers: this.headers,
+    });
+  }
+
+  /**
+   * Builds a plain text response.
+   */
+  text(body: string): Response {
+    this.headers.set('Content-Type', 'text/plain; charset=utf-8');
+    return new Response(body, {
+      status: this.status,
+      headers: this.headers,
+    });
+  }
+}
+
 export interface ErrorEnvelope {
   error: string;
   code?: string;
