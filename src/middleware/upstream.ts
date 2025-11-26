@@ -1,4 +1,9 @@
-import { STRIP_RESPONSE_HEADERS, isDirectApiKeyExempt } from '../lib/constants';
+import {
+  STRIP_RESPONSE_HEADERS,
+  DEFAULT_CACHE_CONTROL_OK,
+  DEFAULT_CACHE_CONTROL_ERROR,
+  isDirectApiKeyExempt,
+} from '../lib/constants';
 import { mapUpstreamPath } from '../lib/routing';
 import { errorResponse, badRequest } from '../lib/errors';
 import { cachedFetch } from '../lib/fetching';
@@ -61,7 +66,7 @@ export const upstream: Middleware = async (ctx) => {
   if (!respHeaders.has('Cache-Control'))
     respHeaders.set(
       'Cache-Control',
-      upstreamResp.ok ? 'public, max-age=60, s-maxage=300' : 'no-cache, max-age=0'
+      upstreamResp.ok ? DEFAULT_CACHE_CONTROL_OK : DEFAULT_CACHE_CONTROL_ERROR
     );
   addStandardResponseHeaders(respHeaders);
   const dt = Date.now() - ctx.start;

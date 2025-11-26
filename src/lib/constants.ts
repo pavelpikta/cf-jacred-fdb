@@ -26,6 +26,14 @@ export const STRIP_RESPONSE_HEADERS = [
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30000;
 export const DEFAULT_TORRSERVER_TIMEOUT_MS = 15000;
 
+export const TORRSERVER_ADD_PATH = '/api/torrserver/add';
+export const TORRSERVER_TEST_PATH = '/api/torrserver/test';
+export const TORRSERVER_PREFIX = '/api/torrserver/';
+export const MAGNET_PREFIX = 'magnet:';
+export const USER_AGENT = 'cf-jacred-worker/1.0';
+export const DEFAULT_CACHE_CONTROL_OK = 'public, max-age=60, s-maxage=300';
+export const DEFAULT_CACHE_CONTROL_ERROR = 'no-cache, max-age=0';
+
 export function isDirectPath(path: string): boolean {
   return DIRECT_PREFIXES.some((p) => path === p || path.startsWith(p));
 }

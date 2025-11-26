@@ -1,9 +1,10 @@
 import { handleTorrServerAdd, handleTorrServerTest } from '../lib/torrserver';
+import { TORRSERVER_PREFIX } from '../lib/constants';
 import type { Middleware } from './types';
 
 export const torrserver: Middleware = async (ctx) => {
   // Only relevant for /api/torrserver/... paths
-  if (!ctx.pathname.startsWith('/api/torrserver/')) return;
+  if (!ctx.pathname.startsWith(TORRSERVER_PREFIX)) return;
   const add = await handleTorrServerAdd({
     request: ctx.request,
     pathname: ctx.pathname,

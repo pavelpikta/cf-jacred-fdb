@@ -1,6 +1,12 @@
 import { badRequest, errorResponse, json } from './errors';
 import { fetchWithTimeout } from './fetching';
 import { isAbortError } from './abort';
+import {
+  TORRSERVER_ADD_PATH,
+  TORRSERVER_TEST_PATH,
+  MAGNET_PREFIX,
+  USER_AGENT,
+} from './constants';
 import type { EnvLike } from './constants';
 import type { Locale } from './i18n';
 
@@ -42,7 +48,7 @@ export function buildTorrServerHeaders({
 }): { headers: Headers; cfAccessTokens: boolean } {
   const base: Record<string, string> = {
     Accept: 'application/json',
-    'User-Agent': 'cf-jacred-worker/1.0',
+    'User-Agent': USER_AGENT,
     'Cache-Control': 'no-cache',
   };
   if (jsonBody) base['Content-Type'] = 'application/json; charset=utf-8';
@@ -103,7 +109,7 @@ export async function handleTorrServerAdd({
   env,
   locale,
 }: TorrAddArgs): Promise<Response | null> {
-  if (pathname !== '/api/torrserver/add') return null;
+  if (pathname !== TORRSERVER_ADD_PATH) return null;
   if (request.method !== 'POST') return badRequest(locale);
   let body: TorrAddRequestBody | undefined;
   try {
@@ -117,7 +123,7 @@ export async function handleTorrServerAdd({
   const pass = (body && (body.password ?? '')).toString();
   const addPath = '/torrents';
   const debug = !!body.debug;
-  if (!magnet || !magnet.startsWith('magnet:')) return badRequest(locale, 'invalid_magnet');
+  if (!magnet || !magnet.startsWith(MAGNET_PREFIX)) return badRequest(locale, 'invalid_magnet');
   if (!tsUrlRaw) return badRequest(locale, 'missing_url');
   if ((user && !pass) || (pass && !user)) return badRequest(locale, 'auth_credentials_mismatch');
   let tsUrl: URL;
@@ -229,7 +235,7 @@ export async function handleTorrServerTest({
   env,
   locale,
 }: TorrTestArgs): Promise<Response | null> {
-  if (pathname !== '/api/torrserver/test') return null;
+  if (pathname !== TORRSERVER_TEST_PATH) return null;
   if (request.method !== 'POST') return badRequest(locale);
   let body: TorrAddRequestBody | undefined;
   try {
