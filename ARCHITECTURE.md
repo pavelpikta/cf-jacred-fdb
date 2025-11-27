@@ -1,265 +1,677 @@
 # Architecture
 
-> Comprehensive documentation of the runtime model for **cf-jacred-fbd**. For a high‑level feature overview see `README.md`.
+> Technical documentation of the runtime model for **cf-jacred-fdb**. For user-facing features and setup, see [`README.md`](./README.md).
 
 ## Table of Contents
 
-1. [Scope](#scope)
-2. [High-Level Overview](#high-level-overview)
-3. [Worker Middleware Pipeline](#worker-middleware-pipeline)
-4. [Middleware Responsibility Matrix](#middleware-responsibility-matrix)
-5. [Decision Tree](#decision-tree)
-6. [Sequence Diagrams](#sequence-diagrams)
-7. [Context Object Shape](#context-object-shape)
-8. [Middleware Contracts](#middleware-contracts)
-9. [Caching & Revalidation Notes](#caching--revalidation-notes)
-10. [Security & Hardening Hooks](#security--hardening-hooks)
-11. [Error Envelope](#error-envelope)
-12. [Extension Points](#extension-points)
+- [System Overview](#system-overview)
+- [Request Flow](#request-flow)
+- [Middleware Pipeline](#middleware-pipeline)
+- [Path Routing](#path-routing)
+- [Caching Architecture](#caching-architecture)
+- [Security Model](#security-model)
+- [Client Applications](#client-applications)
+- [Type System](#type-system)
+- [Extension Guide](#extension-guide)
 
 ---
 
-## Scope
+## System Overview
 
-This document covers runtime request flow, responsibilities of each middleware layer, caching model, and extension affordances. Build tooling, contribution workflow, and user‑facing feature descriptions intentionally remain in `README.md`.
-
-## High-Level Overview
-
-The system consists of:
-
-- **Static UI (Search + Stats)**: Served from Cloudflare Pages asset store (ASSETS binding).
-- **Edge Worker**: Custom `_worker.js` that acts as:
-  - Reverse proxy to upstream API (`/api/...` mapped paths)
-  - Mediator for TorrServer helper endpoints
-  - Security & caching layer (headers, API key stripping, cache key normalization)
-  - Runtime static asset hash resolver (manifest based)
-- **Upstream API**: Plain HTTP origin (TLS termination at Cloudflare edge).
-- **Optional TorrServer**: User‑specified host for magnet addition & status.
-- **Edge Cache (caches.default)**: Lightweight per-POP caching for GET responses with 60s TTL (plus 300s `s-maxage`).
-
-### Diagram (Mermaid)
-
-```mermaid
-flowchart LR
-  Browser[(User Browser)] -->|HTTPS| Pages[Cloudflare Pages\n(Static Assets)]
-  Pages --> Worker[_worker.js\nMiddleware Pipeline]
-  subgraph Edge[Cloudflare Edge]
-    Worker --> Cache[(caches.default)]
-  end
-  Worker -->|/api/... mapped| Upstream[(Upstream API)]
-  Worker -->|/api/torrserver/*| TorrServer[(TorrServer Instance)]
-  Worker -. optional service tokens .-> CFAccess[(Cloudflare Access)]
-  Worker -->|/api/conf| Upstream
-  Worker -->|Static /index /stats| Cache
-```
-
-<details><summary><strong>ASCII Fallback</strong></summary>
+### Components
 
 ```text
-+-----------+    HTTPS     +--------------------+          +---------------------+
-| Browser   | -----------> | Cloudflare Pages   |  ----->  | Worker (_worker.js) |
-| (User)    |              |  (Static Assets)   |          |  Middleware chain   |
-+-----------+              +--------------------+          +----------+----------+
-                                                              |  |  |  |  |  |
-                                                              v  v  v  v  v  v
-                                                          +---------------------+
-                                                          |  caches.default     |
-                                                          +---------------------+
-                                                              |        |
-                                                              v        v      v
-                                                       +-----------+  +--------------+  +-----------------+
-                                                       | Upstream  |  | TorrServer   |  | CF Access (opt) |
-                                                       |  API      |  | (user URL)   |  |  svc tokens      |
-                                                       +-----------+  +--------------+  +-----------------+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Cloudflare Edge                                   │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐  │
+│  │  Pages (R2)     │    │   _worker.js    │    │   caches.default        │  │
+│  │  Static Assets  │◄───│   Middleware    │───►│   Edge Cache            │  │
+│  └─────────────────┘    └────────┬────────┘    └─────────────────────────┘  │
+│                                  │                                           │
+└──────────────────────────────────┼───────────────────────────────────────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+           ┌───────────────┐             ┌───────────────┐
+           │ Upstream API  │             │  TorrServer   │
+           │ (HTTP origin) │             │ (User-hosted) │
+           └───────────────┘             └───────────────┘
 ```
 
-</details>
+### Bindings
 
-## Worker Middleware Pipeline
+| Binding          | Type      | Purpose                             |
+| ---------------- | --------- | ----------------------------------- |
+| `ASSETS`         | R2/KV     | Cloudflare Pages static asset store |
+| `caches.default` | Cache API | Edge cache for upstream responses   |
 
-Order:
+### Data Flow
+
+1. **Browser** → HTTPS → **Cloudflare Edge**
+2. **Worker** inspects request, runs middleware pipeline
+3. **Static requests** → ASSETS binding (with manifest resolution)
+4. **API requests** → Upstream origin (with caching)
+5. **TorrServer requests** → User-specified TorrServer instance
+
+---
+
+## Request Flow
+
+### Decision Tree
 
 ```text
-statsAsset → staticAsset → methodAndCors → torrserver → confEndpoint → upstream
+Request arrives
+    │
+    ├─► Is /stats, /stats/, /stats.html?
+    │       └─► statsAsset middleware → serve stats.html
+    │
+    ├─► Is non-API, non-direct path?
+    │       └─► staticAsset middleware → serve from ASSETS
+    │
+    ├─► Is method allowed (GET/HEAD/POST/OPTIONS)?
+    │       └─► No: return 405
+    │       └─► OPTIONS: return 204 with CORS
+    │
+    ├─► Is /api/torrserver/*?
+    │       └─► torrserver middleware → handle add/test
+    │
+    ├─► Is /api/conf?
+    │       └─► confEndpoint middleware → return config
+    │
+    └─► Remaining API/direct paths
+            └─► upstream middleware → proxy to origin
 ```
 
-Rationale: Serve static & special assets first (fast path), reject invalid methods early, handle domain‑specific TorrServer logic, provide configuration discovery, then network proxy.
+### Sequence: Static Asset
 
-## Middleware Responsibility Matrix
-
-| Order | Name            | Source             | When It Runs                                     | Returns Early For          | Side Effects                               |
-| ----- | --------------- | ------------------ | ------------------------------------------------ | -------------------------- | ------------------------------------------ |
-| 1     | `statsAsset`    | `statsAsset.ts`    | `pathname` in `/stats`, `/stats/`, `/stats.html` | Always (serves stats file) | Caching headers applied                    |
-| 2     | `staticAsset`   | `staticAsset.ts`   | Non‑API & not a direct path                      | Always (serves file)       | Manifest lookup + caching headers          |
-| 3     | `methodAndCors` | `methodAndCors.ts` | Any leftover                                     | 405 / 204 (OPTIONS)        | Adds CORS headers (via later header layer) |
-| 4     | `torrserver`    | `torrserver.ts`    | Path prefix `/api/torrserver/`                   | Add/Test JSON responses    | Network calls to TorrServer                |
-| 5     | `confEndpoint`  | `conf.ts`          | `/api/conf`                                      | Merged JSON config         | Pulls upstream conf (best‑effort)          |
-| 6     | `upstream`      | `upstream.ts`      | Remaining API or direct paths                    | Various error envelopes    | Performs proxied fetch + edge caching      |
-
-> Any middleware returning a `Response` halts further processing.
-
-## Decision Tree
-
-1. Stats asset? → Serve & stop.
-2. Non‑API, non‑direct? → Serve static & stop.
-3. Method allowed? If not → 405 / OPTIONS 204.
-4. TorrServer path? → Handle & stop.
-5. `/api/conf`? → Return config & stop.
-6. Else → Proxy upstream (enforce key, caching, security headers).
-
-## Sequence Diagrams
-
-### Static Asset (`/css/styles.css`)
-
-```mermaid
-sequenceDiagram
-  participant B as Browser
-  participant W as Worker
-  participant A as ASSETS (R2)
-  B->>W: GET /css/styles.css
-  W->>W: statsAsset (skip)
-  W->>W: staticAsset (match)
-  W->>A: fetch asset (hashed?)
-  A-->>W: 200
-  W-->>B: 200 + heuristic caching
+```text
+Browser                  Worker                   ASSETS
+   │                        │                        │
+   │  GET /css/styles.css   │                        │
+   │───────────────────────►│                        │
+   │                        │  resolveHashedPath()   │
+   │                        │───────────────────────►│
+   │                        │◄───────────────────────│
+   │                        │  fetch(hashed path)    │
+   │                        │───────────────────────►│
+   │                        │◄───────────────────────│
+   │  200 + Cache-Control   │                        │
+   │◄───────────────────────│                        │
 ```
 
-### Stats Page (`/stats`)
+### Sequence: API Request
 
-```mermaid
-sequenceDiagram
-  participant B as Browser
-  participant W as Worker
-  participant A as ASSETS
-  B->>W: GET /stats
-  W->>W: statsAsset (match -> /stats.html)
-  W->>A: fetch stats.html
-  A-->>W: 200
-  W-->>B: 200 (no-cache)
+```text
+Browser                  Worker                Cache              Upstream
+   │                        │                    │                    │
+   │  GET /api/torrents     │                    │                    │
+   │───────────────────────►│                    │                    │
+   │                        │  parse API key     │                    │
+   │                        │  map path          │                    │
+   │                        │  strip apikey      │                    │
+   │                        │  cache.match()     │                    │
+   │                        │───────────────────►│                    │
+   │                        │◄───────────────────│                    │
+   │                        │  [MISS]            │                    │
+   │                        │  fetch upstream    │                    │
+   │                        │───────────────────────────────────────►│
+   │                        │◄───────────────────────────────────────│
+   │                        │  cache.put()       │                    │
+   │                        │───────────────────►│                    │
+   │  200 + headers         │                    │                    │
+   │◄───────────────────────│                    │                    │
 ```
 
-### Torrent Search (`/api/torrents?search=...`)
+### Sequence: TorrServer Add
 
-```mermaid
-sequenceDiagram
-  participant B as Browser
-  participant W as Worker
-  participant C as Edge Cache
-  participant U as Upstream
-  B->>W: GET /api/torrents?search=q&apikey=K
-  W->>W: methodAndCors
-  W->>W: parse API key
-  W->>W: mapUpstreamPath
-  W->>W: strip apikey
-  W->>C: cache.match
-  alt Cache HIT
-    C-->>W: 200 (HIT)
-    W-->>B: 200 + headers
-  else Cache MISS
-    W->>U: fetch
-    U-->>W: 200 JSON
-    W->>C: cache.put
-    W-->>B: 200 (MISS)
-  end
+```text
+Browser                  Worker                           TorrServer
+   │                        │                                  │
+   │  POST /api/torrserver/add                                 │
+   │  { magnet, url, ... }  │                                  │
+   │───────────────────────►│                                  │
+   │                        │  validate body                   │
+   │                        │  build auth headers              │
+   │                        │  POST /torrents                  │
+   │                        │─────────────────────────────────►│
+   │                        │◄─────────────────────────────────│
+   │  { ok, status, ... }   │                                  │
+   │◄───────────────────────│                                  │
 ```
 
-### TorrServer Add (`/api/torrserver/add`)
+---
 
-```mermaid
-sequenceDiagram
-  participant B as Browser
-  participant W as Worker
-  participant TS as TorrServer
-  B->>W: POST /api/torrserver/add
-  W->>W: torrserver middleware
-  W->>TS: POST /torrents (timeout guarded)
-  TS-->>W: JSON
-  W-->>B: structured JSON
+## Middleware Pipeline
+
+### Execution Order
+
+```typescript
+const pipeline: Middleware[] = [
+  statsAsset, // 1. Stats page special handling
+  staticAsset, // 2. Generic static assets
+  methodAndCors, // 3. Method validation + CORS
+  torrserver, // 4. TorrServer endpoints
+  confEndpoint, // 5. /api/conf handler
+  upstream, // 6. Upstream proxy (final)
+];
 ```
 
-## Context Object Shape
+### Middleware Contracts
 
-```ts
+| Middleware      | Triggers On         | Returns Early    | Side Effects             |
+| --------------- | ------------------- | ---------------- | ------------------------ |
+| `statsAsset`    | `/stats*` paths     | Always           | Caching headers          |
+| `staticAsset`   | Non-API, non-direct | Always           | Manifest lookup, caching |
+| `methodAndCors` | All remaining       | 405/204          | CORS headers             |
+| `torrserver`    | `/api/torrserver/*` | JSON response    | Network to TorrServer    |
+| `confEndpoint`  | `/api/conf`         | JSON config      | Upstream fetch           |
+| `upstream`      | API/direct paths    | Proxied response | Cache read/write         |
+
+### Middleware Type
+
+```typescript
 interface RequestContext {
   request: Request;
   env: WorkerEnv;
+  ctx: ExecutionContext;
   url: URL;
   pathname: string;
   start: number;
   config: ResolvedConfig;
   apiKey: ApiKeyInfo;
+  locale: Locale;
   isApi: boolean;
   direct: boolean;
-  state: Record<string, unknown>;
   upstreamPath?: string;
   upstreamUrl?: URL;
+  state: Record<string, unknown>;
 }
+
+type Middleware = (ctx: RequestContext) => Promise<Response | void> | Response | void;
 ```
-
-`state` is a scratchpad allowing later middleware to communicate without increasing parameter lists.
-
-## Middleware Contracts
-
-| Middleware      | Inputs                          | Adds to Context               | Failure Modes                                      |
-| --------------- | ------------------------------- | ----------------------------- | -------------------------------------------------- |
-| `statsAsset`    | `pathname`, `env.ASSETS`        | —                             | 404 pass‑through (served as is)                    |
-| `staticAsset`   | `pathname`, manifest            | —                             | 404 pass‑through                                   |
-| `methodAndCors` | `request.method`                | —                             | 405 / 204                                          |
-| `torrserver`    | JSON body, timeout, credentials | —                             | 400 validation, 504 timeout, 502 network           |
-| `confEndpoint`  | upstream `/api/conf`            | —                             | 403 invalid key, partial success on upstream error |
-| `upstream`      | mapped path, timeouts, cache    | `upstreamPath`, `upstreamUrl` | 400, 403, 502, 504                                 |
-
-## Caching & Revalidation Notes
-
-- `cachedFetch` normalizes cache key (drops `_`, `apikey`, `api_key`).
-- ETag based conditional: manual 304 construction with `Vary` token normalization (`Accept`, `If-None-Match`).
-- Successful upstream GET: `public, max-age=60, s-maxage=300` + stored in `caches.default`.
-- Hashed static assets: `public, max-age=31536000, immutable`.
-- HTML: `no-cache, must-revalidate`.
-
-## Security & Hardening Hooks
-
-| Concern           | Mechanism                                      |
-| ----------------- | ---------------------------------------------- |
-| API key leakage   | Stripped query param before upstream URL fetch |
-| Clickjacking      | `X-Frame-Options: DENY`                        |
-| MIME sniffing     | `X-Content-Type-Options: nosniff`              |
-| Referrer privacy  | `Referrer-Policy: no-referrer`                 |
-| XS-Leaks baseline | COOP + CORP headers                            |
-| Permissions scope | Minimal `Permissions-Policy`                   |
-| Cache poisoning   | Normalized key + header sanitization           |
-
-Future: Content-Security-Policy, Subresource Integrity, Turnstile / rate limiting.
-
-## Error Envelope
-
-Canonical structure (fields may include additional diagnostics):
-
-```json
-{ "error": "Сообщение", "code": "upstream_timeout", "locale": "ru", "timeoutMs": 30000 }
-```
-
-HTTP status alignment:
-
-| Status | Typical Causes                                    |
-| ------ | ------------------------------------------------- |
-| 400    | Path decode failure, mapping error, bad body      |
-| 403    | Invalid / missing API key when enforcement active |
-| 404    | Static asset missing (served as‑is)               |
-| 405    | Disallowed method                                 |
-| 502    | Upstream network error / TorrServer network error |
-| 504    | Upstream / TorrServer timeout                     |
-
-## Extension Points
-
-| Area                 | Approach                                                                         |
-| -------------------- | -------------------------------------------------------------------------------- |
-| New virtual endpoint | Insert middleware before `upstream` in pipeline array                            |
-| Additional headers   | Extend `addStandardResponseHeaders` or wrap `upstream`                           |
-| Observability        | Add a logging middleware after `methodAndCors`                                   |
-| Rate limiting        | Middleware before `torrserver` / `upstream` using durable objects or KV counters |
-| CSP enforcement      | Add header in `addStandardResponseHeaders` (feature flag)                        |
 
 ---
 
-### Last updated: 2025-09-23
+## Path Routing
+
+### Local to Upstream Mapping
+
+```typescript
+const RULES: MappingRule[] = [
+  // /api/conf → /api/v1.0/conf
+  { type: 'regex', test: /^(\/conf\/?$)/, to: () => '/api/v1.0/conf' },
+
+  // /api/torrents → /api/v1.0/torrents
+  { type: 'predicate', test: (a) => a.startsWith('/torrents'), to: () => '/api/v1.0/torrents' },
+
+  // /api/stats → /stats (passthrough)
+  { type: 'regex', test: /^(\/stats\/?$)/, to: () => '/stats' },
+  { type: 'predicate', test: (a) => a.startsWith('/stats/'), to: (a) => a },
+
+  // /api/v1/... → /api/v1/... (versioned passthrough)
+  { type: 'regex', test: /^\/v\d/, to: (a) => '/api' + a },
+
+  // Catch-all: /api/foo → /api/foo
+  { type: 'predicate', test: () => true, to: (a) => '/api' + a },
+];
+```
+
+### Direct Passthrough Prefixes
+
+These paths bypass `/api` prefix logic:
+
+```typescript
+const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'];
+const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'];
+```
+
+---
+
+## Caching Architecture
+
+### Cache Layers
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                      Browser Cache                           │
+│  HTML: no-cache │ Hashed: immutable │ API: max-age=60       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Cloudflare Edge Cache                     │
+│           caches.default │ s-maxage=300 for API             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Upstream Origin                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Cache-Control by Asset Type
+
+| Asset             | Cache-Control                         | Rationale                  |
+| ----------------- | ------------------------------------- | -------------------------- |
+| HTML              | `no-cache, must-revalidate`           | Always fresh UX            |
+| Hashed CSS/JS     | `public, max-age=31536000, immutable` | Content-addressed          |
+| Non-hashed CSS/JS | `public, max-age=3600`                | 1 hour default             |
+| Images/fonts      | `public, max-age=604800`              | 1 week                     |
+| API success       | `public, max-age=60, s-maxage=300`    | Short browser, longer edge |
+| API error         | `no-cache, max-age=0`                 | Never cache errors         |
+
+### Cache Key Normalization
+
+```typescript
+function buildCacheKey(request: Request, upstreamUrl: string): Request {
+  const u = new URL(upstreamUrl);
+  u.searchParams.delete('_'); // Cache-busting param
+  u.searchParams.delete('apikey'); // Prevent per-user fragmentation
+  u.searchParams.delete('api_key');
+  return new Request(u.toString(), { method: 'GET' });
+}
+```
+
+### ETag Revalidation
+
+```typescript
+// On cache HIT with If-None-Match header:
+const inm = request.headers.get('If-None-Match');
+const cachedEtag = headers.get('ETag');
+
+if (inm && cachedEtag) {
+  const tokens = inm.split(',').map((s) => s.trim().replace(/^W\/|"/g, ''));
+  const normalized = cachedEtag.replace(/^W\/|"/g, '');
+
+  if (tokens.includes(normalized) || tokens.includes('*')) {
+    return new Response(null, { status: 304, headers: h304 });
+  }
+}
+```
+
+---
+
+## Security Model
+
+### Header Application
+
+```typescript
+function addStandardResponseHeaders(h: Headers): void {
+  h.set('X-Content-Type-Options', 'nosniff');
+  h.set('Referrer-Policy', 'no-referrer');
+  h.set('X-Frame-Options', 'DENY');
+  h.set('Cross-Origin-Opener-Policy', 'same-origin');
+  h.set('Cross-Origin-Resource-Policy', 'same-origin');
+  h.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), fullscreen=(self)');
+  // CORS headers applied separately
+}
+```
+
+### API Key Flow
+
+```typescript
+interface ApiKeyInfo {
+  keyEnforced: boolean; // API_KEY env var is set
+  suppliedKey: string | null; // Key from query param
+  keyValid: boolean; // Key matches allowed list
+  allowedKeys: string[]; // Parsed from API_KEY (comma-separated)
+}
+
+// Key stripped before upstream fetch:
+function stripApiKeyFromParams(params: URLSearchParams): boolean {
+  params.delete('apikey');
+  params.delete('api_key');
+}
+```
+
+### Hop-by-Hop Header Stripping
+
+```typescript
+const STRIP_RESPONSE_HEADERS = [
+  'set-cookie',
+  'transfer-encoding',
+  'connection',
+  'keep-alive',
+  'te',
+  'trailer',
+  'upgrade',
+];
+```
+
+### Threat Mitigations
+
+| Threat           | Mitigation                                 |
+| ---------------- | ------------------------------------------ |
+| API key leakage  | Stripped from upstream URL and cache key   |
+| Clickjacking     | `X-Frame-Options: DENY`                    |
+| MIME sniffing    | `X-Content-Type-Options: nosniff`          |
+| Referrer leakage | `Referrer-Policy: no-referrer`             |
+| XS-Leaks         | COOP + CORP headers                        |
+| Cache poisoning  | Normalized cache keys, header sanitization |
+
+---
+
+## Client Applications
+
+### Search Page (`index.js`)
+
+**Architecture:**
+
+- IIFE pattern (no global pollution)
+- jQuery-based DOM manipulation
+- Event delegation for dynamic content
+- Modular filter system
+
+**State Management:**
+
+```javascript
+let allResults = []; // Raw API results
+let filteredResults = []; // After client-side filtering
+
+const filterCache = {
+  voice: [], // Voice-over options
+  tracker: [], // Tracker identifiers
+  year: [], // Release years
+  season: [], // Season numbers
+  category: [], // Category types
+  quality: [], // Video quality levels
+};
+```
+
+**Filter Flow:**
+
+```text
+API Response → allResults → applyFilters() → filteredResults → render()
+                                  ↑
+                           Filter UI changes
+```
+
+### Stats Page (`stats.js`)
+
+**Architecture:**
+
+- Dependency waiting (jQuery, ApiKey)
+- localStorage caching (5-minute TTL)
+- Auto-refresh (10 minutes, visibility-aware)
+- Theme/layout persistence
+
+**State Management:**
+
+```javascript
+let rawData = []; // All tracker stats
+let viewData = []; // Filtered/sorted for display
+
+// Preferences in localStorage:
+// - statsCacheV1: { ts, data }
+// - statsTheme: 'dark' | 'light'
+// - statsWide: '0' | '1'
+// - statsCompact: '0' | '1'
+// - statsNumbersFull: '0' | '1'
+```
+
+### API Key Module (`modal.apikey.js`)
+
+**Public API:**
+
+```javascript
+ApiKey.ensure(callback); // Ensure valid key, then call callback
+ApiKey.get(); // Get stored key
+ApiKey.reset(); // Clear stored key
+ApiKey.promptReplace(cb); // Force new key prompt
+```
+
+**Validation Flow:**
+
+```text
+ensure() → fetchConf() → requireApiKey?
+              │                 │
+              │                 ├─► No: callback()
+              │                 │
+              │                 └─► Yes: key valid?
+              │                           │
+              │                           ├─► Yes: callback()
+              │                           │
+              │                           └─► No: showModal() → validate → store → callback()
+```
+
+### TorrServer Module (`torrserver.js`)
+
+**Public API:**
+
+```javascript
+TorrServer.openSettings(); // Open config modal
+TorrServer.sendMagnet(magnet); // Send magnet to TorrServer
+TorrServer.getConf(); // Get config (without password)
+TorrServer.getConfWithPassword(); // Get config with decrypted password
+TorrServer.clearPassword(url, user); // Clear stored password
+```
+
+**Password Encryption:**
+
+```text
+Master Password (optional) → PBKDF2 → AES-GCM Key → Encrypt Password
+                                                           │
+                                                           ▼
+                                              sessionStorage or localStorage
+```
+
+---
+
+## Type System
+
+### Worker Environment
+
+```typescript
+interface EnvLike {
+  ASSETS: { fetch(request: Request): Promise<Response> };
+  UPSTREAM_ORIGIN?: string;
+  API_KEY?: string;
+  CF_ACCESS_CLIENT_ID?: string;
+  CF_ACCESS_CLIENT_SECRET?: string;
+  UPSTREAM_TIMEOUT_MS?: string;
+  TORRSERVER_TIMEOUT_MS?: string;
+  ERROR_LOCALE?: string;
+}
+```
+
+### Configuration
+
+```typescript
+interface ResolvedConfig {
+  upstreamOrigin: string; // From UPSTREAM_ORIGIN or default
+  upstreamTimeoutMs: number; // Parsed from UPSTREAM_TIMEOUT_MS
+  torrTimeoutMs: number; // Parsed from TORRSERVER_TIMEOUT_MS
+}
+```
+
+### Error Envelope
+
+```typescript
+interface ErrorEnvelope {
+  error: string; // Human-readable message
+  code?: string; // Machine-readable code
+  locale?: string; // 'en' | 'ru'
+  messageKey?: string; // i18n key used
+  [k: string]: unknown; // Additional context
+}
+```
+
+### Locale System
+
+```typescript
+type Locale = 'en' | 'ru';
+
+type MsgKey =
+  | 'not_found'
+  | 'bad_request'
+  | 'method_not_allowed'
+  | 'forbidden'
+  | 'upstream_timeout'
+  | 'upstream_fetch_failed'
+  | 'torrserver_timeout'
+  | 'torrserver_network'
+  | 'torrserver_all_attempts_failed'
+  | 'missing_url'
+  | 'invalid_url'
+  | 'expect_json_body'
+  | 'invalid_magnet'
+  | 'auth_credentials_mismatch'
+  | 'auth_error_hint'
+  | 'auth_error_hint_tokens'
+  | 'path_decode_error'
+  | 'path_map_error';
+```
+
+---
+
+## Extension Guide
+
+### Adding a New Middleware
+
+1. Create `src/middleware/myMiddleware.ts`:
+
+```typescript
+import type { Middleware } from './types';
+
+export const myMiddleware: Middleware = async (ctx) => {
+  // Return Response to halt pipeline, or void to continue
+  if (ctx.pathname === '/my-endpoint') {
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  // Return nothing to pass to next middleware
+};
+```
+
+2. Export from `src/middleware/index.ts`:
+
+```typescript
+export { myMiddleware } from './myMiddleware';
+```
+
+3. Add to pipeline in `src/worker.ts`:
+
+```typescript
+const pipeline: Middleware[] = [
+  statsAsset,
+  staticAsset,
+  methodAndCors,
+  myMiddleware, // Insert at appropriate position
+  torrserver,
+  confEndpoint,
+  upstream,
+];
+```
+
+### Adding a New Path Mapping
+
+Edit `src/lib/routing.ts`:
+
+```typescript
+const RULES: MappingRule[] = [
+  // Add before catch-all:
+  {
+    type: 'predicate',
+    test: (a) => a.startsWith('/mypath'),
+    to: (a) => '/api/v2' + a,
+  },
+  // ... existing rules
+];
+```
+
+### Adding a New Error Message
+
+1. Add key to `src/lib/i18n.ts`:
+
+```typescript
+type MsgKey /* existing */ = 'my_error';
+
+const RU: LocalePack = {
+  messages: {
+    // ... existing
+    my_error: 'Моя ошибка',
+  },
+};
+
+const EN: LocalePack = {
+  messages: {
+    // ... existing
+    my_error: 'My error',
+  },
+};
+```
+
+2. Use in code:
+
+```typescript
+import { errorResponse } from './errors';
+return errorResponse(ctx.locale, 'my_error', 'my_error', 400);
+```
+
+### Adding Security Headers
+
+Edit `src/lib/security.ts`:
+
+```typescript
+export function addStandardResponseHeaders(h: Headers): void {
+  // ... existing headers
+  h.set('My-Custom-Header', 'value');
+}
+```
+
+### Adding a Direct Passthrough Path
+
+Edit `src/lib/constants.ts`:
+
+```typescript
+export const DIRECT_PREFIXES = [
+  // ... existing
+  '/mypath',
+  '/mypath/',
+] as const;
+
+// If exempt from API key:
+export const DIRECT_API_KEY_EXEMPT_PREFIXES = [
+  // ... existing
+  '/mypath',
+] as const;
+```
+
+---
+
+## Build System
+
+### Asset Hashing
+
+`scripts/copy-static.mjs` handles:
+
+1. Copy `public/` to `dist/`
+2. If `ASSET_HASH=1`:
+   - Hash CSS/JS files (SHA-256, 10 chars)
+   - Rename to `filename.{hash}.ext`
+   - Update references in HTML
+   - Generate `asset-manifest.json`
+3. If `MINIFY=1`:
+   - Minify CSS/JS with esbuild
+
+### Manifest Resolution
+
+```typescript
+// src/lib/manifest.ts
+async function resolveHashedPath(env: EnvLike, pathname: string): Promise<string> {
+  // Skip if already hashed
+  if (/[.-][a-f0-9]{8,}\.[a-z0-9]+$/i.test(pathname)) return pathname;
+
+  // Load manifest from ASSETS (cached in isolate)
+  await load(env);
+
+  // Look up hashed path
+  const key = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+  return state.map[key] ? '/' + state.map[key] : pathname;
+}
+```
+
+---
+
+_Last updated: 2025-11-27_
