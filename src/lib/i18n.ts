@@ -76,15 +76,34 @@ const EN: LocalePack = {
 
 const PACKS: Record<Locale, LocalePack> = { en: EN, ru: RU };
 
+/**
+ * Resolves a raw locale value to a supported Locale type.
+ *
+ * @param raw - Raw locale value (string or unknown)
+ * @returns 'en' for English, 'ru' for Russian (default)
+ */
 export function resolveLocale(raw: unknown): Locale {
   const v = (typeof raw === 'string' ? raw.trim().toLowerCase() : '') as Locale;
   return v === 'en' ? 'en' : 'ru';
 }
 
+/**
+ * Gets the message pack for a given locale.
+ *
+ * @param locale - The locale ('en' | 'ru')
+ * @returns Record of message keys to translated strings
+ */
 export function getMessages(locale: Locale) {
   return PACKS[locale].messages;
 }
 
+/**
+ * Gets a translated message by key for a given locale.
+ *
+ * @param locale - The locale ('en' | 'ru')
+ * @param key - The message key to look up
+ * @returns Translated message string, or the key itself if not found
+ */
 export function msg(locale: Locale, key: MsgKey): string {
   const pack = PACKS[locale];
   return pack.messages[key] || key;

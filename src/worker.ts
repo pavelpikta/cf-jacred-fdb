@@ -1,7 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import type { EnvLike } from './lib/constants';
 import { parseApiKey } from './lib/apiKey';
-import { flushPending } from './lib/fetching';
 import { resolveConfig } from './config';
 import {
   statsAsset,
@@ -14,20 +13,18 @@ import {
   type RequestContext,
 } from './middleware';
 import { isDirectPath, LOCAL_PREFIX } from './lib/constants';
-import { initErrorLocale } from './lib/errors';
+import { resolveLocale } from './lib/i18n';
 
 // Explicit Worker environment (with ERROR_LOCALE etc.)
 export type WorkerEnv = EnvLike;
 
 export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
-    flushPending(ctx);
     const start = Date.now();
     const url = new URL(request.url);
     const pathname = url.pathname;
     const config = resolveConfig(env);
-    // Initialize localization for error messages once per request (cheap)
-    initErrorLocale({ ERROR_LOCALE: env.ERROR_LOCALE });
+    const locale = resolveLocale(env.ERROR_LOCALE);
     const apiKey = parseApiKey(env, url);
     const isApi = pathname === LOCAL_PREFIX || pathname.startsWith(LOCAL_PREFIX + '/');
     const direct = !isApi && isDirectPath(pathname);
@@ -35,11 +32,13 @@ export default {
     const context: RequestContext = {
       request,
       env,
+      ctx,
       url,
       pathname,
       start,
       config,
       apiKey,
+      locale,
       isApi,
       direct,
       state: {},

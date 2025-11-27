@@ -5,7 +5,7 @@ import type { Middleware } from './types';
 export const methodAndCors: Middleware = (ctx) => {
   const { request } = ctx;
   if (!ALLOWED_METHODS.includes(request.method as (typeof ALLOWED_METHODS)[number]))
-    return methodNotAllowed();
+    return methodNotAllowed(ctx.locale);
   if (request.method === 'OPTIONS')
     return new Response(null, {
       status: 204,

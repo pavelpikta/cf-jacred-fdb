@@ -1,17 +1,25 @@
 import { addStandardResponseHeaders } from './security';
+import { stripApiKeyFromParams } from './apiKey';
 
-// Track promises scheduled for waitUntil
-let pendingWaitUntil: Promise<unknown>[] = [];
-export function ctxWaitUntilSafe(promise: Promise<unknown>): void {
-  pendingWaitUntil.push(promise);
-}
-export function flushPending(ctx: ExecutionContext): void {
-  if (pendingWaitUntil.length) {
-    for (const p of pendingWaitUntil) ctx.waitUntil(p);
-    pendingWaitUntil = [];
-  }
+/**
+ * Safely registers a promise with the execution context's waitUntil.
+ *
+ * @param ctx - Cloudflare Workers ExecutionContext
+ * @param promise - Promise to keep the worker alive for
+ */
+export function ctxWaitUntilSafe(ctx: ExecutionContext, promise: Promise<unknown>): void {
+  ctx.waitUntil(promise);
 }
 
+/**
+ * Fetches a resource with an automatic timeout using AbortController.
+ *
+ * @param resource - URL string to fetch
+ * @param init - Fetch request init options
+ * @param timeoutMs - Timeout in milliseconds
+ * @returns The fetch Response
+ * @throws DOMException with name 'AbortError' if timeout is exceeded
+ */
 export async function fetchWithTimeout(
   resource: string,
   init: RequestInit,
@@ -26,15 +34,30 @@ export async function fetchWithTimeout(
   }
 }
 
+/**
+ * Builds a cache key Request for upstream responses, stripping cache-busting params.
+ *
+ * @param request - Original incoming request
+ * @param upstreamUrl - The upstream URL being fetched
+ * @returns A GET Request suitable for use as a cache key
+ */
 export function buildCacheKey(request: Request, upstreamUrl: string): Request {
   const u = new URL(upstreamUrl);
   u.searchParams.delete('_');
   // Remove API key query params to prevent cache fragmentation per user key.
-  u.searchParams.delete('apikey');
-  u.searchParams.delete('api_key');
+  stripApiKeyFromParams(u.searchParams);
   return new Request(u.toString(), { method: 'GET' });
 }
 
+/**
+ * Fetches from upstream with timeout, forwarding appropriate headers and body.
+ *
+ * @param upstreamUrl - The upstream URL to fetch
+ * @param request - Original incoming request (headers/method/body are forwarded)
+ * @param timeoutMs - Timeout in milliseconds
+ * @returns The upstream Response
+ * @throws DOMException with name 'AbortError' if timeout is exceeded
+ */
 export async function fetchUpstream(
   upstreamUrl: string,
   request: Request,
@@ -52,7 +75,19 @@ export async function fetchUpstream(
   return fetchWithTimeout(upstreamUrl, init, timeoutMs);
 }
 
+/**
+ * Fetches from upstream with Cloudflare Cache API integration for GET requests.
+ * Handles cache hits, ETag/If-None-Match validation, and stores cacheable responses.
+ *
+ * @param ctx - Cloudflare Workers ExecutionContext (for waitUntil cache writes)
+ * @param upstreamUrl - The upstream URL to fetch
+ * @param request - Original incoming request
+ * @param timeoutMs - Timeout in milliseconds
+ * @returns Response from cache or upstream, with CF-Cache-Status header
+ * @throws DOMException with name 'AbortError' if timeout is exceeded
+ */
 export async function cachedFetch(
+  ctx: ExecutionContext,
   upstreamUrl: string,
   request: Request,
   timeoutMs: number
@@ -107,7 +142,7 @@ export async function cachedFetch(
       status: upstreamResp.status,
       headers: cacheHeaders,
     });
-    ctxWaitUntilSafe(cache.put(cacheKey, cacheable));
+    ctxWaitUntilSafe(ctx, cache.put(cacheKey, cacheable));
   }
   return upstreamResp;
 }

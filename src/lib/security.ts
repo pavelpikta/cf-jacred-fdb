@@ -1,5 +1,12 @@
 import { CORS_HEADERS } from './constants';
 
+/**
+ * Adds standard security and CORS headers to a Headers object (mutates in place).
+ * Sets X-Content-Type-Options, Referrer-Policy, X-Frame-Options, Cross-Origin policies,
+ * Permissions-Policy, default Cache-Control, and CORS headers.
+ *
+ * @param h - Headers object to modify
+ */
 export function addStandardResponseHeaders(h: Headers): void {
   h.set('X-Content-Type-Options', 'nosniff');
   h.set('Referrer-Policy', 'no-referrer');

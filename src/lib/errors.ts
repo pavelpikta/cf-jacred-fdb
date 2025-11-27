@@ -1,13 +1,5 @@
 import { CORS_HEADERS, ALLOWED_METHODS } from './constants';
-import { getMessages, resolveLocale, type Locale } from './i18n';
-
-let activeLocale: Locale = 'ru';
-let M = getMessages(activeLocale);
-
-export function initErrorLocale(env: { ERROR_LOCALE?: string }) {
-  activeLocale = resolveLocale(env?.ERROR_LOCALE);
-  M = getMessages(activeLocale);
-}
+import { getMessages, type Locale } from './i18n';
 
 export interface ErrorEnvelope {
   error: string;
@@ -17,6 +9,14 @@ export interface ErrorEnvelope {
   [k: string]: unknown;
 }
 
+/**
+ * Creates a JSON Response with standard headers.
+ *
+ * @param data - Data to serialize as JSON
+ * @param status - HTTP status code (default: 200)
+ * @param extraHeaders - Additional headers to include
+ * @returns JSON Response with CORS and content-type headers
+ */
 export function json(
   data: unknown,
   status = 200,
@@ -33,7 +33,19 @@ export function json(
   });
 }
 
+/**
+ * Creates a localized error JSON Response.
+ *
+ * @param locale - Locale for message translation ('en' | 'ru')
+ * @param code - Error code identifier
+ * @param messageOrKey - Raw message string or i18n key to translate
+ * @param status - HTTP status code
+ * @param extra - Additional fields to include in response body
+ * @param extraHeaders - Additional response headers
+ * @returns JSON Response with error envelope
+ */
 export function errorResponse(
+  locale: Locale,
   code: string,
   messageOrKey: string,
   status: number,
@@ -41,26 +53,50 @@ export function errorResponse(
   extraHeaders: Record<string, string> = {}
 ): Response {
   // Allow passing either raw message or key existing in locale pack.
+  const M = getMessages(locale);
   const isKey = Object.prototype.hasOwnProperty.call(M, messageOrKey);
   const translated = isKey ? (M as Record<string, string>)[messageOrKey] : messageOrKey;
   const payload: ErrorEnvelope = {
     error: translated,
     code,
-    locale: activeLocale,
+    locale,
     messageKey: isKey ? messageOrKey : code,
     ...extra,
   };
   return json(payload, status, extraHeaders);
 }
 
-export function notFound(custom?: string): Response {
-  return errorResponse('not_found', custom ? custom : 'not_found', 404);
+/**
+ * Creates a 404 Not Found error Response.
+ *
+ * @param locale - Locale for message translation
+ * @param custom - Optional custom message or i18n key
+ * @returns 404 JSON Response
+ */
+export function notFound(locale: Locale, custom?: string): Response {
+  return errorResponse(locale, 'not_found', custom ? custom : 'not_found', 404);
 }
-export function badRequest(custom?: string): Response {
-  return errorResponse('bad_request', custom ? custom : 'bad_request', 400);
+
+/**
+ * Creates a 400 Bad Request error Response.
+ *
+ * @param locale - Locale for message translation
+ * @param custom - Optional custom message or i18n key
+ * @returns 400 JSON Response
+ */
+export function badRequest(locale: Locale, custom?: string): Response {
+  return errorResponse(locale, 'bad_request', custom ? custom : 'bad_request', 400);
 }
-export function methodNotAllowed(): Response {
+
+/**
+ * Creates a 405 Method Not Allowed error Response with Allow header.
+ *
+ * @param locale - Locale for message translation
+ * @returns 405 JSON Response with Allow header listing permitted methods
+ */
+export function methodNotAllowed(locale: Locale): Response {
   return errorResponse(
+    locale,
     'method_not_allowed',
     'method_not_allowed',
     405,

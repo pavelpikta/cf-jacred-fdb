@@ -1,13 +1,27 @@
 export const DEFAULT_UPSTREAM_ORIGIN = 'http://redapi.cfhttp.top';
+
+/**
+ * Returns the upstream origin URL from environment or falls back to default.
+ *
+ * @param env - Environment object with optional UPSTREAM_ORIGIN
+ * @returns The upstream origin URL string
+ */
 export function getUpstreamOrigin(env: EnvLike): string {
   return env && env.UPSTREAM_ORIGIN ? env.UPSTREAM_ORIGIN : DEFAULT_UPSTREAM_ORIGIN;
 }
 
 export const LOCAL_PREFIX = '/api';
 // Direct passthrough prefixes (bypass local /api mapping logic)
-export const DIRECT_PREFIXES = ['/stats', '/stats/', '/sync', '/sync/', '/lastupdatedb', '/health'];
+export const DIRECT_PREFIXES = [
+  '/stats',
+  '/stats/',
+  '/sync',
+  '/sync/',
+  '/lastupdatedb',
+  '/health',
+] as const;
 // Subset of direct prefixes that are always allowed without an API key even if API_KEY is configured.
-export const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'];
+export const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'] as const;
 export const ALLOWED_METHODS = ['GET', 'HEAD', 'OPTIONS', 'POST'] as const;
 export const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -22,21 +36,52 @@ export const STRIP_RESPONSE_HEADERS = [
   'te',
   'trailer',
   'upgrade',
-];
+] as const;
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30000;
 export const DEFAULT_TORRSERVER_TIMEOUT_MS = 15000;
 
+export const TORRSERVER_ADD_PATH = '/api/torrserver/add';
+export const TORRSERVER_TEST_PATH = '/api/torrserver/test';
+export const TORRSERVER_PREFIX = '/api/torrserver/';
+export const MAGNET_PREFIX = 'magnet:';
+export const USER_AGENT = 'cf-jacred-worker/1.0';
+export const DEFAULT_CACHE_CONTROL_OK = 'public, max-age=60, s-maxage=300';
+export const DEFAULT_CACHE_CONTROL_ERROR = 'no-cache, max-age=0';
+
+// Headers to forward from TorrServer responses
+export const TORRSERVER_FORWARD_HEADERS = new Set([
+  'content-type',
+  'www-authenticate',
+  'server',
+  'content-length',
+]);
+
+/**
+ * Checks if a path is a direct passthrough path (bypasses /api mapping).
+ *
+ * @param path - The URL pathname to check
+ * @returns True if path matches a direct passthrough prefix
+ */
 export function isDirectPath(path: string): boolean {
   return DIRECT_PREFIXES.some((p) => path === p || path.startsWith(p));
 }
 
-// Returns true if a direct path should be allowed without providing an API key
-// even when API key enforcement is enabled globally.
+/**
+ * Checks if a direct path should be allowed without API key when enforcement is enabled.
+ *
+ * @param path - The URL pathname to check
+ * @returns True if path is exempt from API key requirement
+ */
 export function isDirectApiKeyExempt(path: string): boolean {
   return DIRECT_API_KEY_EXEMPT_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
 }
 
-// Centralized helper for identifying the stats HTML (supports legacy variants)
+/**
+ * Checks if a path is a stats HTML asset request (supports legacy variants).
+ *
+ * @param path - The URL pathname to check
+ * @returns True if path matches stats page patterns
+ */
 export function isStatsAssetRequest(path: string): boolean {
   return path === '/stats' || path === '/stats/' || path === '/stats.html';
 }

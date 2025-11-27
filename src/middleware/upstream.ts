@@ -1,8 +1,13 @@
-import { STRIP_RESPONSE_HEADERS, isDirectApiKeyExempt } from '../lib/constants';
+import {
+  STRIP_RESPONSE_HEADERS,
+  DEFAULT_CACHE_CONTROL_OK,
+  DEFAULT_CACHE_CONTROL_ERROR,
+  isDirectApiKeyExempt,
+} from '../lib/constants';
+import { stripApiKeyFromParams } from '../lib/apiKey';
 import { mapUpstreamPath } from '../lib/routing';
 import { errorResponse, badRequest } from '../lib/errors';
 import { cachedFetch } from '../lib/fetching';
-import { stripApiKeyParams } from '../lib/apiKey';
 import { addStandardResponseHeaders } from '../lib/security';
 import { isAbortError } from '../lib/abort';
 import type { Middleware } from './types';
@@ -14,53 +19,55 @@ export const upstream: Middleware = async (ctx) => {
   // API key enforcement (non-conf paths): do not allow if invalid, allow API key exempt prefixes
   const apiKeyExempt = ctx.direct && isDirectApiKeyExempt(ctx.pathname);
   if ((ctx.isApi || ctx.direct) && !apiKeyExempt && ctx.apiKey.keyEnforced && !ctx.apiKey.keyValid)
-    return errorResponse('forbidden', 'forbidden', 403);
+    return errorResponse(ctx.locale, 'forbidden', 'forbidden', 403);
 
   // Validate path encoding
   try {
     decodeURIComponent(ctx.pathname);
   } catch {
-    return badRequest('path_decode_error');
+    return badRequest(ctx.locale, 'path_decode_error');
   }
 
   let upstreamPath: string;
   try {
     upstreamPath = ctx.direct ? ctx.pathname : mapUpstreamPath(ctx.pathname);
   } catch {
-    return badRequest('path_map_error');
+    return badRequest(ctx.locale, 'path_map_error');
   }
   ctx.upstreamPath = upstreamPath;
   const upstreamUrl = new URL(upstreamPath, ctx.config.upstreamOrigin);
-  upstreamUrl.search = ctx.url.search; // initial search (with potential api key)
-  if (stripApiKeyParams(ctx.url)) upstreamUrl.search = ctx.url.search; // remove if present
+  const cleanedSearch = new URLSearchParams(ctx.url.searchParams);
+  stripApiKeyFromParams(cleanedSearch);
+  upstreamUrl.search = cleanedSearch.toString();
   ctx.upstreamUrl = upstreamUrl;
 
   let upstreamResp: Response;
   try {
     upstreamResp = await cachedFetch(
+      ctx.ctx,
       upstreamUrl.toString(),
       ctx.request,
       ctx.config.upstreamTimeoutMs
     );
   } catch (err) {
     if (isAbortError(err))
-      return errorResponse('upstream_timeout', 'upstream_timeout', 504, {
+      return errorResponse(ctx.locale, 'upstream_timeout', 'upstream_timeout', 504, {
         timeoutMs: ctx.config.upstreamTimeoutMs,
       });
-    return errorResponse('upstream_fetch_failed', 'upstream_fetch_failed', 502, {
+    return errorResponse(ctx.locale, 'upstream_fetch_failed', 'upstream_fetch_failed', 502, {
       detail: err instanceof Error ? err.message : String(err),
     });
   }
 
   const respHeaders = new Headers();
   for (const [k, v] of upstreamResp.headers.entries()) {
-    if (STRIP_RESPONSE_HEADERS.includes(k.toLowerCase())) continue;
+    if ((STRIP_RESPONSE_HEADERS as readonly string[]).includes(k.toLowerCase())) continue;
     respHeaders.set(k, v);
   }
   if (!respHeaders.has('Cache-Control'))
     respHeaders.set(
       'Cache-Control',
-      upstreamResp.ok ? 'public, max-age=60, s-maxage=300' : 'no-cache, max-age=0'
+      upstreamResp.ok ? DEFAULT_CACHE_CONTROL_OK : DEFAULT_CACHE_CONTROL_ERROR
     );
   addStandardResponseHeaders(respHeaders);
   const dt = Date.now() - ctx.start;

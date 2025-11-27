@@ -1,4 +1,3 @@
-import { isDirectPath } from '../lib/constants';
 import { withAdjustedAssetCaching } from '../lib/assets';
 import { resolveHashedPath } from '../lib/manifest';
 import type { Middleware } from './types';
@@ -19,8 +18,3 @@ export const staticAsset: Middleware = async (ctx) => {
   const assetResp = await ctx.env.ASSETS.fetch(fetchReq);
   return withAdjustedAssetCaching(effectivePath, assetResp);
 };
-
-// Helper reused by upstream middleware
-export function computeDirect(pathname: string): boolean {
-  return isDirectPath(pathname);
-}
