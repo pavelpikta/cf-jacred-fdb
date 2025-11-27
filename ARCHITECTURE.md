@@ -20,7 +20,7 @@
 
 ### Components
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                            Cloudflare Edge                                   │
 │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐  │
@@ -59,7 +59,7 @@
 
 ### Decision Tree
 
-```
+```text
 Request arrives
     │
     ├─► Is /stats, /stats/, /stats.html?
@@ -84,7 +84,7 @@ Request arrives
 
 ### Sequence: Static Asset
 
-```
+```text
 Browser                  Worker                   ASSETS
    │                        │                        │
    │  GET /css/styles.css   │                        │
@@ -101,7 +101,7 @@ Browser                  Worker                   ASSETS
 
 ### Sequence: API Request
 
-```
+```text
 Browser                  Worker                Cache              Upstream
    │                        │                    │                    │
    │  GET /api/torrents     │                    │                    │
@@ -124,7 +124,7 @@ Browser                  Worker                Cache              Upstream
 
 ### Sequence: TorrServer Add
 
-```
+```text
 Browser                  Worker                           TorrServer
    │                        │                                  │
    │  POST /api/torrserver/add                                 │
@@ -231,7 +231,7 @@ const DIRECT_API_KEY_EXEMPT_PREFIXES = ['/lastupdatedb', '/health'];
 
 ### Cache Layers
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      Browser Cache                           │
 │  HTML: no-cache │ Hashed: immutable │ API: max-age=60       │
@@ -380,7 +380,7 @@ const filterCache = {
 
 **Filter Flow:**
 
-```
+```text
 API Response → allResults → applyFilters() → filteredResults → render()
                                   ↑
                            Filter UI changes
@@ -422,7 +422,7 @@ ApiKey.promptReplace(cb); // Force new key prompt
 
 **Validation Flow:**
 
-```
+```text
 ensure() → fetchConf() → requireApiKey?
               │                 │
               │                 ├─► No: callback()
@@ -448,7 +448,7 @@ TorrServer.clearPassword(url, user); // Clear stored password
 
 **Password Encryption:**
 
-```
+```text
 Master Password (optional) → PBKDF2 → AES-GCM Key → Encrypt Password
                                                            │
                                                            ▼

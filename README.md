@@ -213,6 +213,7 @@ Configure in Cloudflare Pages dashboard or `wrangler.toml`:
 
 ### Project Structure
 
+<!-- markdownlint-disable MD040 -->
 ```
 cf-jacred-fdb/
 ├── src/                    # TypeScript Worker source
@@ -251,6 +252,7 @@ cf-jacred-fdb/
 ├── tsconfig.json           # TypeScript configuration
 └── package.json            # Dependencies and scripts
 ```
+<!-- markdownlint-enable MD040 -->
 
 ---
 
@@ -506,6 +508,7 @@ A: Set `ERROR_LOCALE=en` environment variable.
 
 ## License
 
+<!-- markdownlint-disable MD040 -->
 ```
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -519,6 +522,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
+<!-- markdownlint-enable MD040 -->
 
 See [LICENSE](./LICENSE) for full details.
 
