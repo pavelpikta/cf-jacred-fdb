@@ -1,15 +1,11 @@
-# cf-jacred-fbd
-
-<!-- markdownlint-disable MD033 -->
+# cf-jacred-fdb
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pavelpikta/cf-jacred-fdb/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pavelpikta/cf-jacred-fdb/actions)
 [![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-orange?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/pages/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-black?logo=cloudflare)](https://developers.cloudflare.com/workers/)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178c6?logo=typescript&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-≥18.0.0-339933?logo=node.js&logoColor=white)
-![ESBuild](https://img.shields.io/badge/ESBuild-0.25.12-FFCF00?logo=esbuild&logoColor=black)
-![ESLint](https://img.shields.io/badge/ESLint-9.39.1-4B32C3?logo=eslint&logoColor=white)
-![Prettier](https://img.shields.io/badge/Prettier-3.3.3-F7B93E?logo=prettier&logoColor=black)
+![ESBuild](https://img.shields.io/badge/ESBuild-0.27.0-FFCF00?logo=esbuild&logoColor=black)
 ![Version](https://img.shields.io/badge/Version-0.1.0-blue)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Architecture](https://img.shields.io/badge/Docs-architecture-blueviolet)](./ARCHITECTURE.md)
@@ -19,135 +15,269 @@
 
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pavelpikta/cf-jacred-fdb)
 
-> ⚠️ Early alpha: **public API surface / HTML structure may still change**. Pin a commit if you depend on it.
+> ⚠️ **Early Alpha**: Public API surface and HTML structure may still change. Pin a commit if you depend on it.
 
-Edge‑accelerated torrent meta search UI + tracker statistics dashboard delivered via Cloudflare Pages + a custom `_worker.js` (API gateway, security headers, caching, TorrServer helpers) that fronts an HTTP‑only upstream API.
-
-> ℹ️ **Rendering note:** If your viewer does not support Mermaid diagrams, expand the "ASCII Fallback" sections below each diagram.
+Edge-accelerated torrent meta search UI + tracker statistics dashboard delivered via Cloudflare Pages with a custom Worker (`_worker.js`) that acts as an API gateway, security layer, caching proxy, and TorrServer integration helper.
 
 ---
 
-## 📚 Table of Contents
+## Table of Contents
 
-1. [Overview](#overview)
-2. [Feature Highlights](#feature-highlights)
-3. [Public HTTP Surface](#public-http-surface)
-4. [Environment Variables](#environment-variables-worker--pages)
-5. [Caching Strategy](#caching-strategy-summarized)
-6. [Build & Tooling](#build--tooling)
-7. [Local Quick Start](#local-quick-start)
-8. [Security](#security-headers--hardening)
-9. [API Key Flow](#api-key-flow-detailed)
-10. [TorrServer Integration](#torrserver-integration)
-11. [Architecture](#architecture)
-12. [JSON Error Examples](#json-error-examples)
-13. [Debug & Diagnostics](#debug--diagnostics)
-14. [Extensibility Ideas](#extensibility-ideas)
-15. [Contributing](#contributing)
-16. [FAQ](#faq)
-17. [License](#license)
-18. [Support](#support--issues)
-
-> 🇷🇺 Русская версия документации: см. [`README.ru.md`](./README.ru.md) и расширенную архитектуру [`ARCHITECTURE.ru.md`](./ARCHITECTURE.ru.md).
-
----
+- [Overview](#overview)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [HTTP API Reference](#http-api-reference)
+- [Environment Variables](#environment-variables)
+- [Build & Development](#build--development)
+- [Deployment](#deployment)
+- [Security](#security)
+- [TorrServer Integration](#torrserver-integration)
+- [API Key Management](#api-key-management)
+- [Caching Strategy](#caching-strategy)
+- [Error Handling](#error-handling)
+- [Debug & Diagnostics](#debug--diagnostics)
+- [Internationalization](#internationalization)
+- [Contributing](#contributing)
+- [FAQ](#faq)
+- [License](#license)
 
 ---
 
 ## Overview
 
-This project serves two main browser apps:
+This project provides two browser applications:
 
-1. Search ( `index.html` ) – torrent meta search with rich client‑side filtering, sorting, API‑key aware requests, and TorrServer integration (send magnet directly).
-2. Stats ( `stats.html` ) – live tracker statistics dashboard with auto refresh, aggregate summary, theming, compact/wide layouts, number formatting modes, and offline (localStorage) caching.
+### 1. Torrent Search (`/`)
 
-Both pages are static assets in `public/` copied (and optionally hashed) into `dist/` at build time; the Worker handles:
+- Full-text search with exact match option
+- Multi-facet filtering: quality, voice-over, year, season, tracker, category
+- Text refinement and exclusion filters
+- Client-side sorting by seeders, size, or date
+- TorrServer integration for direct magnet sending
+- Tracker icons and color-coded badges
 
-- Auth (optional API key; query param stripped before origin fetch)
-- Path translation `/api/...` → upstream
-- Direct pass‑through for selected “direct” paths (`/stats`, `/sync` prefixes)
-- Smart edge & browser caching (ETag + conditional 304, hashed asset immutability)
-- Response security headers & hop‑by‑hop header stripping
-- TorrServer helper POST endpoints with timeout + CF Access token support
-- Runtime asset hash rewriting via manifest (so HTML stays clean of fingerprint logic in dev)
+### 2. Tracker Statistics (`/stats`)
 
-## Feature Highlights
+- Live dashboard with auto-refresh (10 minutes)
+- Aggregate totals across all trackers
+- Proportional distribution bars (confirm/wait/skip)
+- Stale data highlighting (>7 days, >90 days)
+- Theme switching (dark/light)
+- Compact and wide layout modes
+- Number formatting toggle (abbreviated vs full)
 
-- Search interface with multi‑facet filters (quality / voice / year / season / tracker / category + refine & exclude substring filters)
-- Sort modes: seeders, size, date; persisted in `localStorage`
-- Stats dashboard with: auto refresh (10m, visible tab), dynamic sort modes, theme (dark/light), compact & wide modes, number formatting toggle (abbreviated vs full), aggregate totals card, stale data highlighting
-- Optional API key discovery and modal prompt; key persisted & validated via `/api/conf`
-- TorrServer endpoints: add magnet, test connectivity/version; supports Basic Auth and Cloudflare Access service tokens
-- Edge caching with revalidation & ETag handling (304 path)
-- Manifest‑backed hashed assets for long cache lifetimes without sacrificing UX
-- Comprehensive security headers (CSP placeholder) & basic threat mitigations
+### Worker Responsibilities
 
-## Public HTTP Surface
+The Cloudflare Worker handles:
 
-| Endpoint / Path                   | Method | Kind               | Description                                        |
-| --------------------------------- | ------ | ------------------ | -------------------------------------------------- |
-| `/`                               | GET    | Static             | Search UI (served as `index.html`)                 |
-| `/stats` / `/stats.html`          | GET    | Static (special)   | Stats dashboard (canonical served as `stats.html`) |
-| `/api/conf`                       | GET    | API (proxied)      | Capability + API key validation descriptor         |
-| `/api/torrents?search=...&exact=` | GET    | API (proxied)      | Torrent search passthrough                         |
-| `/api/stats/torrents`             | GET    | API (proxied)      | Tracker statistics passthrough                     |
-| `/api/torrserver/add`             | POST   | Worker action      | Magnet → TorrServer helper (JSON)                  |
-| `/api/torrserver/test`            | POST   | Worker action      | TorrServer connectivity & version probe            |
-| `/api/*` (other)                  | \*     | API (proxied)      | Generic upstream mapping (GET/HEAD/POST/OPTIONS)   |
-| `/sync*` (direct prefix)          | \*     | Direct passthrough | Bypasses `/api` prefix mapping rules               |
+- **API Gateway**: Routes `/api/*` requests to upstream with path translation
+- **Security**: API key validation, header sanitization, CORS
+- **Caching**: Edge cache with ETag/304 support, normalized cache keys
+- **TorrServer Proxy**: Endpoints for adding magnets and testing connectivity
+- **Static Assets**: Manifest-based hashed asset resolution
 
-Unsupported methods return a 405 JSON error envelope.
+---
 
-## Environment Variables (Worker & Pages)
+## Features
 
-Configure these in Cloudflare Pages (Production & Preview) or via `wrangler.toml` for local dev.
+| Feature              | Description                                        |
+| -------------------- | -------------------------------------------------- |
+| **Edge Caching**     | 60s browser / 300s edge TTL with ETag revalidation |
+| **Hashed Assets**    | Immutable 1-year cache for fingerprinted CSS/JS    |
+| **API Key Auth**     | Optional enforcement with multi-key support        |
+| **TorrServer**       | Proxy and direct modes with Basic Auth + CF Access |
+| **i18n**             | Russian (default) and English error messages       |
+| **Security Headers** | X-Frame-Options, CSP-ready, CORS, Referrer-Policy  |
+| **Responsive UI**    | Mobile-optimized with touch enhancements           |
 
-| Name                                              | Required? | Purpose                                                         | Notes                                            |
-| ------------------------------------------------- | --------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| `UPSTREAM_ORIGIN`                                 | Yes       | Base origin (no trailing slash) for `/api/...` mappings         | Plain HTTP allowed (TLS terminates at edge)      |
-| `API_KEY`                                         | Optional  | Enforces API key if set                                         | If empty → `requireApiKey: false` in `/api/conf` |
-| `UPSTREAM_TIMEOUT_MS`                             | Optional  | Timeout for generic upstream fetches                            | Default 30000 ms                                 |
-| `TORRSERVER_TIMEOUT_MS`                           | Optional  | Timeout for TorrServer operations                               | Default 15000 ms                                 |
-| `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` | Optional  | Service token for protected TorrServer behind Cloudflare Access | Adds headers when both present                   |
-| `DEBUG_LOGS`                                      | Optional  | Future flag for verbose logging                                 | Not currently implemented                        |
+---
 
-Preview vs production variables can diverge (e.g. unset `API_KEY` in preview for easier testing).
-
-## Caching Strategy (Summarized)
-
-| Asset / Response                                 | Cache-Control                         | Edge Behavior                        |
-| ------------------------------------------------ | ------------------------------------- | ------------------------------------ |
-| HTML (`index.html`, `stats.html`)                | `no-cache, must-revalidate`           | Always validated (fresh UX)          |
-| Hashed static assets (CSS/JS with manifest hash) | `public, max-age=31536000, immutable` | Long-lived, content addressed        |
-| Upstream API (successful GET)                    | `public, max-age=60, s-maxage=300`    | Stored in `caches.default` (60s TTL) |
-| 304 revalidation path                            | Returns 304 with normalized `Vary`    | Avoids double fetch                  |
-
-Cache key drops volatile/query-only params (`apikey`, `api_key`, `_`). Users can force refresh with `Cache-Control: no-cache` request header.
-
-## Build & Tooling
-
-| Task             | Command              | Notes                                    |
-| ---------------- | -------------------- | ---------------------------------------- |
-| Dev (unminified) | `npm run dev`        | Esbuild watch + Wrangler dev             |
-| Type check       | `npm run typecheck`  | `tsc --noEmit`                           |
-| Lint             | `npm run lint`       | ESLint flat config                       |
-| Format           | `npm run format`     | Prettier                                 |
-| Production build | `npm run build:prod` | Minified worker + static copy + manifest |
-
-Tooling stack: TypeScript, esbuild, ESLint, Prettier. Output shipped is only what resides in `dist/` (see `.cloudflareignore`).
-
-## Local Quick Start
+## Quick Start
 
 ```bash
+# Install dependencies
 npm install
+
+# Development (unminified, with wrangler dev server)
 npm run dev
-# or for production style
-npm run build:prod && wrangler pages dev dist
+
+# Production build
+npm run build:prod
+
+# Preview production build locally
+wrangler pages dev dist
 ```
 
-## Security Headers & Hardening
+**Requirements**: Node.js ≥18.0.0
 
-Automatically applied (unless already present upstream):
+---
+
+## HTTP API Reference
+
+### Static Assets
+
+| Path                               | Description              |
+| ---------------------------------- | ------------------------ |
+| `/`                                | Search UI (`index.html`) |
+| `/stats`, `/stats/`, `/stats.html` | Statistics dashboard     |
+| `/css/*`, `/js/*`, `/img/*`        | Static assets            |
+
+### API Endpoints
+
+| Endpoint                       | Method | Description                        |
+| ------------------------------ | ------ | ---------------------------------- |
+| `/api/conf`                    | GET    | Configuration & API key validation |
+| `/api/torrents?search=&exact=` | GET    | Torrent search                     |
+| `/api/stats/torrents`          | GET    | Tracker statistics                 |
+| `/api/torrserver/add`          | POST   | Add magnet to TorrServer           |
+| `/api/torrserver/test`         | POST   | Test TorrServer connectivity       |
+
+### Direct Passthrough Paths
+
+These paths bypass `/api` mapping and go directly to upstream:
+
+| Path            | Description                                |
+| --------------- | ------------------------------------------ |
+| `/stats/*`      | Upstream stats endpoints                   |
+| `/sync/*`       | Sync operations                            |
+| `/lastupdatedb` | Database update timestamp (API key exempt) |
+| `/health`       | Health check (API key exempt)              |
+
+### Request/Response Examples
+
+**Search Request:**
+
+```http
+GET /api/torrents?search=matrix&apikey=YOUR_KEY&exact=true
+```
+
+**TorrServer Add:**
+
+```http
+POST /api/torrserver/add
+Content-Type: application/json
+
+{
+  "magnet": "magnet:?xt=urn:btih:...",
+  "url": "http://localhost:8090",
+  "username": "admin",
+  "password": "secret",
+  "debug": false
+}
+```
+
+**TorrServer Test:**
+
+```http
+POST /api/torrserver/test
+Content-Type: application/json
+
+{
+  "url": "http://localhost:8090",
+  "username": "admin",
+  "password": "secret"
+}
+```
+
+---
+
+## Environment Variables
+
+Configure in Cloudflare Pages dashboard or `wrangler.toml`:
+
+| Variable                  | Required | Default                    | Description                         |
+| ------------------------- | -------- | -------------------------- | ----------------------------------- |
+| `UPSTREAM_ORIGIN`         | Yes      | `http://redapi.cfhttp.top` | Upstream API origin                 |
+| `API_KEY`                 | No       | —                          | Comma-separated API keys for auth   |
+| `UPSTREAM_TIMEOUT_MS`     | No       | `30000`                    | Upstream request timeout            |
+| `TORRSERVER_TIMEOUT_MS`   | No       | `15000`                    | TorrServer request timeout          |
+| `CF_ACCESS_CLIENT_ID`     | No       | —                          | Cloudflare Access client ID         |
+| `CF_ACCESS_CLIENT_SECRET` | No       | —                          | Cloudflare Access client secret     |
+| `ERROR_LOCALE`            | No       | `ru`                       | Error message locale (`en` or `ru`) |
+
+---
+
+## Build & Development
+
+### NPM Scripts
+
+| Command              | Description                          |
+| -------------------- | ------------------------------------ |
+| `npm run dev`        | Build + wrangler dev server          |
+| `npm run build`      | Development build                    |
+| `npm run build:prod` | Production build (minified + hashed) |
+| `npm run typecheck`  | TypeScript type checking             |
+| `npm run lint`       | ESLint                               |
+| `npm run format`     | Prettier formatting                  |
+| `npm run watch`      | Watch mode for assets + worker       |
+
+### Project Structure
+
+```
+cf-jacred-fdb/
+├── src/                    # TypeScript Worker source
+│   ├── worker.ts           # Entry point
+│   ├── config.ts           # Configuration resolver
+│   ├── lib/                # Shared utilities
+│   │   ├── apiKey.ts       # API key parsing/validation
+│   │   ├── assets.ts       # Asset caching logic
+│   │   ├── constants.ts    # Constants and types
+│   │   ├── errors.ts       # Error response builders
+│   │   ├── fetching.ts     # Fetch with timeout/caching
+│   │   ├── i18n.ts         # Internationalization
+│   │   ├── manifest.ts     # Asset hash manifest
+│   │   ├── routing.ts      # Path mapping rules
+│   │   ├── security.ts     # Security headers
+│   │   └── torrserver.ts   # TorrServer handlers
+│   └── middleware/         # Request pipeline
+│       ├── index.ts        # Exports
+│       ├── types.ts        # Context types
+│       ├── statsAsset.ts   # /stats page handler
+│       ├── staticAsset.ts  # Static file handler
+│       ├── methodAndCors.ts# Method validation + CORS
+│       ├── torrserver.ts   # TorrServer endpoints
+│       ├── conf.ts         # /api/conf endpoint
+│       └── upstream.ts     # Upstream proxy
+├── public/                 # Static assets
+│   ├── index.html          # Search page
+│   ├── stats.html          # Stats page
+│   ├── css/                # Stylesheets
+│   ├── js/                 # Client JavaScript
+│   └── img/                # Images and icons
+├── scripts/
+│   └── copy-static.mjs     # Build script
+├── dist/                   # Build output (gitignored)
+├── wrangler.toml           # Cloudflare configuration
+├── tsconfig.json           # TypeScript configuration
+└── package.json            # Dependencies and scripts
+```
+
+---
+
+## Deployment
+
+### Cloudflare Pages
+
+1. Create a Pages project named `cf-jacred-fdb` (or update `wrangler.toml`)
+2. Set environment variables in Pages dashboard
+3. Configure build command: `npm run build:prod`
+4. Configure output directory: `dist`
+5. Push to your Git branch for automatic deployment
+
+### Manual Deployment
+
+```bash
+npm run build:prod
+wrangler pages deploy dist
+```
+
+---
+
+## Security
+
+### Response Headers
+
+All responses include:
 
 | Header                         | Value                                                         |
 | ------------------------------ | ------------------------------------------------------------- |
@@ -157,152 +287,249 @@ Automatically applied (unless already present upstream):
 | `Cross-Origin-Opener-Policy`   | `same-origin`                                                 |
 | `Cross-Origin-Resource-Policy` | `same-origin`                                                 |
 | `Permissions-Policy`           | `geolocation=(), microphone=(), camera=(), fullscreen=(self)` |
-| `Access-Control-Allow-*`       | Open (`*`) for simplicity (adjust later)                      |
 
-Planned: strict CSP, SRI for external scripts, optional rate limiting & Turnstile, `/healthz` endpoint.
+### CORS
 
-Threat snippets:
+Open CORS policy (`*`) for API endpoints. Adjust in production if needed.
 
-| Threat                          | Mitigation                                   |
-| ------------------------------- | -------------------------------------------- |
-| API key leakage upstream        | Worker strips `apikey` before origin fetch   |
-| Clickjacking                    | `X-Frame-Options: DENY`                      |
-| MIME sniffing                   | `X-Content-Type-Options: nosniff`            |
-| Referrer leakage                | `Referrer-Policy: no-referrer`               |
-| XS-Leaks baseline               | COOP + CORP alignment                        |
-| Cache poisoning / fragmentation | Normalized cache key removes volatile params |
+### API Key Protection
 
-## API Key Flow (Detailed)
+- Keys stripped from upstream requests and cache keys
+- Multi-key support (comma-separated in `API_KEY`)
+- Exempt paths: `/lastupdatedb`, `/health`
 
-1. Page loads → modal script requests `/api/conf` (optionally with stored key).
-2. Response includes `{ requireApiKey: boolean, apikey: true|false|undefined }`.
-3. If `requireApiKey` and `apikey !== true`, user prompted; candidate key validated via `/api/conf?apikey=...`.
-4. Accepted key stored in `localStorage.api_key` and appended to future API queries.
-5. Worker strips `apikey` from upstream URL & cache key (prevents leakage / fragmentation).
+### Client-Side Security
+
+- XSS protection via HTML escaping
+- URL sanitization (strips `javascript:` protocol)
+- Password encryption with Web Crypto API (AES-GCM)
+- Optional master password for real encryption security
+
+---
 
 ## TorrServer Integration
 
-Endpoints:
+### Modes
 
-| Path                   | Purpose                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `/api/torrserver/add`  | POST `{ magnet, url, username?, password?, debug? }` → TorrServer `/torrents` |
-| `/api/torrserver/test` | POST `{ url, username?, password? }` → TorrServer `/echo` (detects version)   |
+1. **Proxy Mode** (default): Browser → Worker → TorrServer
+   - Avoids CORS issues
+   - Supports CF Access tokens
+   - Cannot reach private networks
 
-Behaviors:
+2. **Direct Mode**: Browser → TorrServer
+   - Requires CORS or same-origin
+   - Works with LAN servers
+   - Needs credentials in browser
 
-- Timeouts (`TORRSERVER_TIMEOUT_MS`).
-- Basic Auth auto-applied if credentials present.
-- Optional Cloudflare Access service tokens (`CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET`).
-- Detect Cloudflare Access 403 to surface `cloudflareAccess: true` hint.
-- Debug mode echoes raw payloads (avoid in untrusted contexts).
+### Password Storage
 
-## Architecture
+- Encrypted with AES-GCM + PBKDF2
+- Optional master password for real security
+- Storage: sessionStorage (default) or localStorage
+- Fallback to session memory if crypto unavailable
 
-For the full middleware pipeline, diagrams (Mermaid + ASCII), caching & security rationale, decision trees, and extension points, see: [`ARCHITECTURE.md`](./ARCHITECTURE.md) (🇷🇺 Russian translation: [`ARCHITECTURE.ru.md`](./ARCHITECTURE.ru.md)).
+### Configuration
 
-Minimal overview (edge request path):
+Access via "Настройки TorrServer" link in the search UI:
 
-```text
-statsAsset → staticAsset → methodAndCors → torrserver → confEndpoint → upstream
+- TorrServer URL
+- Username/password (optional)
+- Direct mode toggle
+- Persist password toggle
+- Master password setup
+
+---
+
+## API Key Management
+
+### Flow
+
+1. Page loads → checks `/api/conf`
+2. If `requireApiKey: true` and no valid key → modal prompt
+3. Key validated server-side via `/api/conf?apikey=...`
+4. Valid key stored in `localStorage.api_key`
+5. Key appended to API requests, stripped before upstream
+
+### Client API
+
+```javascript
+// Ensure key is available before API calls
+ApiKey.ensure(() => {
+  // Safe to make API calls
+});
+
+// Get stored key
+const key = ApiKey.get();
+
+// Reset key (forces new prompt)
+ApiKey.reset();
 ```
 
-Static assets are served first (fast path), then method/CORS validation, domain helpers (TorrServer + config), and finally the generic upstream proxy which applies caching + security headers.
+---
 
-### Preview vs Production
+## Caching Strategy
 
-`wrangler.toml` defines an `env.preview` block. Cloudflare Pages automatically injects `preview` vs `production` contexts for deploys so you can supply different `API_KEY` / `UPSTREAM_ORIGIN` values in the dashboard if needed.
+| Asset Type        | Cache-Control                         | Edge Behavior          |
+| ----------------- | ------------------------------------- | ---------------------- |
+| HTML files        | `no-cache, must-revalidate`           | Always revalidated     |
+| Hashed assets     | `public, max-age=31536000, immutable` | Long-term cached       |
+| Non-hashed CSS/JS | `public, max-age=3600`                | 1 hour                 |
+| Images/fonts      | `public, max-age=604800`              | 1 week                 |
+| API responses     | `public, max-age=60, s-maxage=300`    | 60s browser, 5min edge |
 
-## Deployment (Cloudflare Pages)
+### Cache Key Normalization
 
-1. Create / connect project in Cloudflare Pages dashboard (project name must match `name` in `wrangler.toml`: `jdr`).
-2. Configure environment variables (Production & Preview) in Pages settings.
-3. (Optional) Enable source maps (`upload_source_maps = true`). Allow `_worker.js.map` via `.cloudflareignore` rules if needed.
-4. Push to your Git branch → automatic build: `npm run build:prod` (configure in Pages build command) or replicate its steps.
-5. Pages uploads only what survives `.cloudflareignore` (we ship just `dist/` output + any permitted maps).
+Stripped from cache keys:
 
-## JSON Error Examples
+- `apikey`, `api_key` (prevents fragmentation)
+- `_` (cache-busting parameter)
 
-| Scenario           | Example                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Invalid method     | `{ "error": "Метод не поддерживается", "code": "method_not_allowed", "locale": "ru" }`                             |
-| Upstream timeout   | `{ "error": "Превышено время ожидания апстрима", "code": "upstream_timeout", "locale": "ru", "timeoutMs": 30000 }` |
-| TorrServer timeout | `{ "error": "Превышено время ожидания TorrServer", "code": "torrserver_timeout", ... }`                            |
+### Force Refresh
+
+Send `Cache-Control: no-cache` header to bypass cache.
+
+---
+
+## Error Handling
+
+### Error Response Format
+
+```json
+{
+  "error": "Human-readable message",
+  "code": "error_code",
+  "locale": "ru",
+  "messageKey": "i18n_key"
+}
+```
+
+### HTTP Status Codes
+
+| Status | Cause                                        |
+| ------ | -------------------------------------------- |
+| 400    | Invalid request, path decode error, bad JSON |
+| 403    | Invalid/missing API key                      |
+| 404    | Asset not found                              |
+| 405    | Method not allowed                           |
+| 502    | Upstream/TorrServer network error            |
+| 504    | Upstream/TorrServer timeout                  |
+
+---
 
 ## Debug & Diagnostics
 
-| Need                    | How                                                              |
-| ----------------------- | ---------------------------------------------------------------- |
-| Show upstream URL used  | `x-debug-upstream: 1` request header (response `X-Upstream-URL`) |
-| Measure worker time     | Inspect `Server-Timing` header (`edge;dur=<ms>`)                 |
-| Force fresh fetch       | `Cache-Control: no-cache` request header                         |
-| TorrServer verbose JSON | Include `{ "debug": true }` in add POST body                     |
+| Need                | Method                                                   |
+| ------------------- | -------------------------------------------------------- |
+| Show upstream URL   | `x-debug-upstream: 1` header → `X-Upstream-URL` response |
+| Measure worker time | Check `Server-Timing: edge;dur=<ms>` header              |
+| Force fresh fetch   | `Cache-Control: no-cache` request header                 |
+| TorrServer debug    | `"debug": true` in POST body                             |
+| Client debug        | `localStorage.setItem('torrserver_debug', '1')`          |
 
-## Extensibility Ideas
+---
 
-- Add CSP & SRI
-- Service Worker for partial offline (search history cache)
-- Pagination / virtualization for very large result sets
-- i18n (strings currently Russian) – externalize to JSON per locale
-- Rate limiting (token bucket / Turnstile integration)
-- Metrics/log export (Logpush / Workers Analytics Engine)
+## Internationalization
+
+### Supported Locales
+
+- `ru` (Russian) - default
+- `en` (English)
+
+### Configuration
+
+Set `ERROR_LOCALE` environment variable to `en` for English error messages.
+
+### Message Keys
+
+```typescript
+type MsgKey =
+  | 'not_found'
+  | 'bad_request'
+  | 'method_not_allowed'
+  | 'forbidden'
+  | 'upstream_timeout'
+  | 'upstream_fetch_failed'
+  | 'torrserver_timeout'
+  | 'torrserver_network'
+  | 'torrserver_all_attempts_failed'
+  | 'missing_url'
+  | 'invalid_url'
+  | 'expect_json_body'
+  | 'invalid_magnet'
+  | 'auth_credentials_mismatch'
+  | 'auth_error_hint'
+  | 'auth_error_hint_tokens'
+  | 'path_decode_error'
+  | 'path_map_error';
+```
+
+---
 
 ## Contributing
 
-1. Fork & branch.
-2. Run `npm run typecheck` + `npm run build` before committing.
-3. For production build parity test `npm run build:prod`.
-4. Keep README in sync for any routing / header / env changes.
-5. Add or update inline comments (code intentionally leans descriptive for maintainability).
+1. Fork and create a feature branch
+2. Run `npm run typecheck` and `npm run lint` before committing
+3. Test with `npm run build:prod`
+4. Update documentation for any API/config changes
+5. Submit a pull request
 
-Lint / Format:
+### Code Style
 
-```bash
-npm run lint
-npm run format
-```
+- TypeScript with strict mode
+- ESLint + Prettier formatting
+- Descriptive comments for maintainability
+- JSDoc for public functions
+
+---
 
 ## FAQ
 
-**Why query param (not header) for API key?** Simplicity + bookmarkable URLs. Can migrate to header transparently (still parse query for backwards compatibility).
+**Q: Why query param instead of header for API key?**  
+A: Simplicity and bookmarkable URLs. Header support can be added for backward compatibility.
 
-**Why proxy an HTTP (not HTTPS) upstream?** TLS terminates at Cloudflare edge; upstream may be internal or controlled. End user always speaks HTTPS to Pages.
+**Q: Why proxy an HTTP upstream?**  
+A: TLS terminates at Cloudflare edge. Upstream may be internal. Users always connect via HTTPS.
 
-**Does this rate limit?** Not yet. Add Turnstile or per‑IP caching / token bucket if abuse emerges.
+**Q: Does this rate limit?**  
+A: Not yet. Consider Turnstile or per-IP limiting if abuse occurs.
 
-**How do I add another static page?** Place it in `public/`, reference assets relatively, rebuild. It will be served automatically unless it conflicts with a reserved prefix.
+**Q: How to add a new static page?**  
+A: Place in `public/`, reference assets relatively, rebuild. Served automatically unless it conflicts with reserved prefixes.
 
-**Can I disable API key enforcement in preview?** Yes – clear `API_KEY` variable in the Pages preview environment.
+**Q: Can I disable API key in preview?**  
+A: Yes, leave `API_KEY` empty in Pages preview environment variables.
+
+**Q: How to change error language?**  
+A: Set `ERROR_LOCALE=en` environment variable.
+
+---
 
 ## License
 
-See [LICENSE](LICENSE) for full details.
-
-```text
-Licensed to the Apache Software Foundation (ASF) under one
-or more contributor license agreements.  See the NOTICE file
-distributed with this work for additional information
-regarding copyright ownership.  The ASF licenses this file
-to you under the Apache License, Version 2.0 (the
-"License"); you may not use this file except in compliance
-with the License.  You may obtain a copy of the License at
+```
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
   https://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing,
-software distributed under the License is distributed on an
-"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-KIND, either express or implied.  See the License for the
-specific language governing permissions and limitations
-under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 ```
 
-## Support / Issues
+See [LICENSE](./LICENSE) for full details.
 
-Please open an issue including:
+---
+
+## Support
+
+Open an issue with:
 
 - Steps to reproduce
 - Expected vs actual behavior
-- Request URL(s) & method(s)
-- Relevant response headers / JSON payload (if not sensitive)
-- (Optional) Screenshots / HAR for complex rendering issues
+- Request URL(s) and method(s)
+- Relevant response headers/JSON (if not sensitive)
+- Screenshots/HAR for rendering issues
