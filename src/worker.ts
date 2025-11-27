@@ -57,8 +57,8 @@ export default {
       const result = await mw(context);
       if (result) return result;
     }
-    // Fallback (should not happen) – return generic 500.
-    return new Response('Unhandled request', { status: 500 });
+    // Passthrough to Cloudflare (external workers, Pages, etc.)
+    return fetch(request);
   },
 };
 
