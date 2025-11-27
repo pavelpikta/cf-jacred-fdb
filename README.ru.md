@@ -216,6 +216,7 @@ Content-Type: application/json
 ### Структура проекта
 
 <!-- markdownlint-disable MD040 -->
+
 ```
 cf-jacred-fdb/
 ├── src/                    # TypeScript исходники Worker
@@ -254,6 +255,7 @@ cf-jacred-fdb/
 ├── tsconfig.json           # Конфигурация TypeScript
 └── package.json            # Зависимости и скрипты
 ```
+
 <!-- markdownlint-enable MD040 -->
 
 ---
@@ -511,6 +513,7 @@ type MsgKey =
 ## Лицензия
 
 <!-- markdownlint-disable MD040 -->
+
 ```
 Лицензировано под Apache License, Version 2.0 ("Лицензия");
 вы не можете использовать этот файл иначе как в соответствии с Лицензией.
@@ -524,6 +527,7 @@ type MsgKey =
 явных или подразумеваемых. См. Лицензию для конкретного языка,
 регулирующего разрешения и ограничения по Лицензии.
 ```
+
 <!-- markdownlint-enable MD040 -->
 
 Полный текст: [LICENSE](./LICENSE)
