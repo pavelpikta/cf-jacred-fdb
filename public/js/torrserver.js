@@ -1032,7 +1032,7 @@
       conf.username && password
         ? 'Basic ' + btoa(unescape(encodeURIComponent(conf.username + ':' + password)))
         : null;
-    const bodyStr = JSON.stringify({ action: 'add', link: magnet });
+    const bodyStr = JSON.stringify({ action: 'add', link: magnet, save_to_db: true });
     const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
     if (auth) headers['Authorization'] = auth;
     const controller = new AbortController();

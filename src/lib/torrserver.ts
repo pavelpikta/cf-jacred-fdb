@@ -180,7 +180,7 @@ export async function handleTorrServerAdd({
     return badRequest(locale, err instanceof Error ? err.message : 'invalid_url');
   }
   const addUrl = new URL(addPath, tsUrl);
-  const payloadObj = { action: 'add', link: magnet };
+  const payloadObj = { action: 'add', link: magnet, save_to_db: true };
   const { headers: headersJson, cfAccessTokens } = buildTorrServerHeaders({
     env,
     user,
