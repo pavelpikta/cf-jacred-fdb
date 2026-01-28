@@ -69,6 +69,11 @@ export const upstream: Middleware = async (ctx) => {
       'Cache-Control',
       upstreamResp.ok ? DEFAULT_CACHE_CONTROL_OK : DEFAULT_CACHE_CONTROL_ERROR
     );
+  // /lastupdatedb: always fresh from upstream, correct charset, no cache
+  if (ctx.pathname === '/lastupdatedb') {
+    respHeaders.set('Content-Type', 'text/plain; charset=utf-8');
+    respHeaders.set('Cache-Control', 'no-store, max-age=0');
+  }
   addStandardResponseHeaders(respHeaders);
   const dt = Date.now() - ctx.start;
   respHeaders.set('Server-Timing', `edge;dur=${dt}`);

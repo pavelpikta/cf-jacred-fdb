@@ -93,6 +93,9 @@ export async function cachedFetch(
   timeoutMs: number
 ): Promise<Response> {
   if (request.method !== 'GET') return fetchUpstream(upstreamUrl, request, timeoutMs);
+  const u = new URL(upstreamUrl);
+  const isLastUpdateDb = u.pathname === '/lastupdatedb';
+  if (isLastUpdateDb) return fetchUpstream(upstreamUrl, request, timeoutMs);
   // Cloudflare Workers augments CacheStorage with a 'default' cache. Cast to any for type compatibility.
   // Cloudflare Workers runtime provides caches.default (Cache interface)
   const cache: Cache = (caches as unknown as { default: Cache }).default;
