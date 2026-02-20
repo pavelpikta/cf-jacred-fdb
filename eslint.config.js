@@ -90,8 +90,8 @@ export default [
           caughtErrors: 'none',
         },
       ],
-      // Enforce naming of caught error variable with unicorn plugin
-      'unicorn/catch-error-name': ['warn', { name: 'err' }],
+      // Disabled: incompatible with ESLint 10 flat config (context.getScope removed)
+      // 'unicorn/catch-error-name': ['warn', { name: 'err' }],
       // Disallow completely empty catch with no comment marker (we allow empty by config above;
       // this supplemental rule encourages a comment for intentional swallowing)
       '@typescript-eslint/no-empty-function': [
