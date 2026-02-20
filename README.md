@@ -15,6 +15,8 @@
 
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pavelpikta/cf-jacred-fdb)
 
+> ⚠️ **Temporary on hold**:
+
 > ⚠️ **Early Alpha**: Public API surface and HTML structure may still change. Pin a commit if you depend on it.
 
 Edge-accelerated torrent meta search UI + tracker statistics dashboard delivered via Cloudflare Pages with a custom Worker (`_worker.js`) that acts as an API gateway, security layer, caching proxy, and TorrServer integration helper.
