@@ -189,8 +189,8 @@ export async function handleTorrServerAdd({
   });
   const attempts: TorrAddAttempt[] = [];
   async function attemptJson() {
-    let resp: Response | null,
-      raw = '';
+    let resp: Response | null;
+    let raw: string;
     try {
       const bodyStr = JSON.stringify(payloadObj);
       try {
@@ -315,8 +315,8 @@ export async function handleTorrServerTest({
   }
   const testUrl = new URL('/echo', tsUrl);
   const { headers, cfAccessTokens } = buildTorrServerHeaders({ env, user, pass, jsonBody: false });
-  let resp: Response,
-    raw = '';
+  let resp: Response;
+  let raw: string;
   try {
     resp = await fetchWithTimeout(testUrl.toString(), { method: 'GET', headers }, torrTimeoutMs);
     try {
